@@ -161,14 +161,16 @@ def get_heatmap():
 
 @app.route('/api/cameras')
 def get_cameras():
-    """Get all camera locations."""
+    """Get all active camera locations."""
     try:
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
             SELECT camera_id, name, latitude, longitude, borough, zone_type,
                    description, video_url, is_active
-            FROM cameras ORDER BY camera_id
+            FROM cameras 
+            WHERE is_active = true
+            ORDER BY camera_id
         """)
 
         cameras = [{

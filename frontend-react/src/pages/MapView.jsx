@@ -293,7 +293,10 @@ function MapView() {
 
       if (camerasRes.ok) {
         const cams = await camerasRes.json();
+        console.log(`Loaded ${cams.length} cameras from API:`, cams);
         setCameras(cams);
+      } else {
+        console.error('Failed to load cameras:', camerasRes.status, camerasRes.statusText);
       }
     } catch (err) {
       console.error('Error loading map data:', err);
@@ -402,10 +405,10 @@ function MapView() {
             
             {cameras.map((camera, i) => (
               <CameraMarker
-                key={i}
+                key={camera.camera_id || i}
                 camera={camera}
                 onClick={handleCameraClick}
-                isActive={selectedCamera?.camera_id === camera.camera_id}
+                isActive={camera.is_active !== false}
                 hasAlert={cameraAlerts[camera.camera_id] > 0}
                 alertCount={cameraAlerts[camera.camera_id] || 0}
               />
