@@ -31,23 +31,33 @@ CAMERAS = [
     },
     {
         "camera_id": "CAM-2",
-        "name": "Houston St & FDR Drive",
-        "latitude": 40.7142,
-        "longitude": -73.9782,
+        "name": "Wall Street",
+        "latitude": 40.7074,
+        "longitude": -74.0113,
         "borough": "Manhattan",
-        "zone_type": "accident_zone",
-        "description": "Lower East Side - high accident corridor",
-        "video_url": "/Video_Creation_Request_Fulfilled.mp4"
+        "zone_type": "financial_district",
+        "description": "Wall Street - Financial District high-speed corridor",
+        "video_url": "/wallstreet.mp4"
     },
     {
         "camera_id": "CAM-3",
-        "name": "West Side Highway & 57th",
-        "latitude": 40.7714,
-        "longitude": -73.9916,
-        "borough": "Manhattan",
-        "zone_type": "accident_zone",
-        "description": "West Side Highway - dangerous intersection",
-        "video_url": "/Video_Generation_Successful.mp4"
+        "name": "Barclays Center",
+        "latitude": 40.6826,
+        "longitude": -73.9754,
+        "borough": "Brooklyn",
+        "zone_type": "event_venue",
+        "description": "Barclays Center - Atlantic Ave high traffic zone",
+        "video_url": "/brooklyn.mp4"
+    },
+    {
+        "camera_id": "CAM-4",
+        "name": "Hudson Valley Albany",
+        "latitude": 42.6526,
+        "longitude": -73.7562,
+        "borough": "Albany",
+        "zone_type": "highway",
+        "description": "Hudson Valley - I-87 high-speed corridor",
+        "video_url": "/hudson valley albany.mp4"
     }
 ]
 

@@ -913,12 +913,9 @@ def get_local_courts_summary():
                     if idx > 0:
                         county = parts[idx - 1]
                         county_counts[county] = county_counts.get(county, 0) + count
-                elif 'NYC' in issuer_name.upper() or 'NEW YORK' in issuer_name.upper():
+                elif 'NYC' in issuer_name.upper() or 'NEW YORK CITY' in issuer_name.upper():
                     county_counts['NYC'] = county_counts.get('NYC', 0) + count
-                else:
-                    # Use first word as county approximation
-                    county = parts[0] if parts else 'Unknown'
-                    county_counts[county] = county_counts.get(county, 0) + count
+                # Skip entries without "COUNTY" in the name to avoid false positives
         
         top_counties = [{"county": k, "count": v} for k, v in sorted(county_counts.items(), key=lambda x: x[1], reverse=True)[:10]]
         unique_counties = len(county_counts)

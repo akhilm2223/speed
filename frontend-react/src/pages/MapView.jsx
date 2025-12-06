@@ -248,6 +248,8 @@ function MapView() {
   const [loading, setLoading] = useState(true);
   const [selectedCamera, setSelectedCamera] = useState(null);
   const [mapInstance, setMapInstance] = useState(null);
+  const [recentViolations, setRecentViolations] = useState([]);
+  const [showViolationsPanel, setShowViolationsPanel] = useState(true);
   const [selectedViolation, setSelectedViolation] = useState(null);
   const [violationPopupPos, setViolationPopupPos] = useState(null);
   const [cameraAlerts, setCameraAlerts] = useState({});  // {camera_id: alertCount}
@@ -319,6 +321,25 @@ function MapView() {
       console.error('Error loading lives saved:', err);
     }
   };
+  
+  const loadRecentViolations = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/recent-violations`);
+      if (res.ok) {
+        const data = await res.json();
+        setRecentViolations(data.slice(0, 10)); // Show last 10
+      }
+    } catch (err) {
+      console.error('Error loading violations:', err);
+    }
+  };
+  
+  // Load violations on mount and refresh every 10 seconds
+  useEffect(() => {
+    loadRecentViolations();
+    const interval = setInterval(loadRecentViolations, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleCameraClick = (camera) => {
     setSelectedCamera(camera);
@@ -332,8 +353,9 @@ function MapView() {
         [selectedCamera.camera_id]: (prev[selectedCamera.camera_id] || 0) + result.high_risk_count
       }));
     }
-    // Refresh lives saved counter
+    // Refresh lives saved counter and violations
     loadLivesSaved();
+    loadRecentViolations();
   };
 
   return (
@@ -464,25 +486,6 @@ function MapView() {
           </div>
         </div>
 
-        {/* Camera List */}
-        <div className="camera-list-overlay">
-          <h3>Enforcement Cameras</h3>
-          {cameras.map((cam, i) => (
-            <div 
-              key={i}
-              className="camera-list-item"
-              onClick={() => {
-                if (mapInstance) {
-                  mapInstance.setView([cam.latitude, cam.longitude], 14, { animate: true });
-                }
-                setSelectedCamera(cam);
-              }}
-            >
-              <span className="cam-name">{cam.name}</span>
-              <span className="cam-zone">{cam.zone_type?.replace('_', ' ')}</span>
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* Camera Modal */}

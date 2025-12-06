@@ -6,4 +6,4 @@ new_york_state_coordinates.csv
 Traffic_Tickets_Issued__Four_Year_Window_20251201.csv
 *.xlsx
 *.csv
-!new_york_state_coordinates.csv
+!new_york_state_coordinates.csvnul

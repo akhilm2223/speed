@@ -11,6 +11,7 @@ Then access API at: http://localhost:5001
 import os
 import re
 from datetime import datetime
+from pathlib import Path
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg
@@ -353,6 +354,8 @@ def run_detection(camera_id):
     """
     try:
         data = request.json
+        print(f"DEBUG: Received data: {data}")  # Debug log
+        
         plate_id = data.get('plate_id')
         speed_detected = data.get('speed_detected')
         speed_limit = data.get('speed_limit', 30)
@@ -407,20 +410,39 @@ def run_detection(camera_id):
             VALUES (%s, 'NY') ON CONFLICT DO NOTHING
         """, (plate_id,))
         
+        # Get screenshot path if provided
+        screenshot_path = data.get('screenshot_path')
+        
         # Create REAL violation record (same as NYC Open Data format)
         location = f"{borough}, ({cam_lat}, {cam_lng})"
         cur.execute("""
             INSERT INTO violations (
-                plate_id, registration_state, source_type, violation_code,
-                violation_description, issue_date, violation_location
-            ) VALUES (%s, 'NY', 'camera', %s, %s, NOW(), %s)
+                driver_license_number, driver_full_name, date_of_birth, license_state,
+                plate_id, plate_state, violation_code, date_of_violation,
+                disposition, latitude, longitude,
+                police_agency, ticket_issuer, source_type
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s, %s, %s, %s, %s)
             RETURNING violation_id
         """, (
-            plate_id, violation_code,
-            f"Speed Camera: {speed_detected} MPH in {speed_limit} MPH zone at {corridor}",
-            location
+            'UNKNOWN', 'UNKNOWN', '1980-01-01', 'NY',
+            plate_id, 'NY', violation_code, 'GUILTY',
+            cam_lat, cam_lng,
+            f"Camera {camera_id}", corridor, 'camera'
         ))
         violation_id = cur.fetchone()[0]
+        
+        # Store AI violation with screenshot
+        cur.execute("""
+            INSERT INTO ai_violations (
+                violation_id, camera_id, plate_id, violation_type,
+                points, speed_detected, speed_limit, latitude, longitude,
+                screenshot_path
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            violation_id, camera_id, plate_id, violation_type,
+            points, speed_detected, speed_limit, cam_lat, cam_lng,
+            screenshot_path
+        ))
         
         # Get updated driver stats from violations table
         cur.execute("""
@@ -435,12 +457,12 @@ def run_detection(camera_id):
                 END) as total_points,
                 COUNT(*) FILTER (WHERE violation_code IN ('1180D', '1180E', '1180F')) as severe_count,
                 COUNT(*) FILTER (
-                    WHERE EXTRACT(HOUR FROM issue_date) >= 22 
-                       OR EXTRACT(HOUR FROM issue_date) < 4
+                    WHERE EXTRACT(HOUR FROM date_of_violation) >= 22 
+                       OR EXTRACT(HOUR FROM date_of_violation) < 4
                 ) as night_violations,
-                COUNT(DISTINCT SPLIT_PART(violation_location, ',', 1)) as borough_count
+                COUNT(DISTINCT police_agency) as borough_count
             FROM violations
-            WHERE plate_id = %s AND registration_state = 'NY'
+            WHERE plate_id = %s AND plate_state = 'NY'
         """, (plate_id,))
         
         stats = cur.fetchone()
@@ -531,6 +553,9 @@ def run_detection(camera_id):
         return jsonify(detection_result)
         
     except Exception as e:
+        import traceback
+        print(f"ERROR in run_detection: {str(e)}")
+        print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 
@@ -612,6 +637,269 @@ def reset_demo():
         return jsonify({"error": str(e)}), 500
 
 
+# Serve screenshots
+from flask import send_from_directory
+import os
+
+SNAPSHOTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'snapshots')
+
+@app.route('/snapshots/<path:filename>')
+def serve_snapshot(filename):
+    """Serve violation screenshots."""
+    print(f"Serving snapshot: {filename} from {SNAPSHOTS_DIR}")
+    return send_from_directory(SNAPSHOTS_DIR, filename)
+
+
+@app.route('/api/cameras/screenshot', methods=['POST'])
+def upload_screenshot():
+    """Upload and save a screenshot from camera detection."""
+    try:
+        from werkzeug.utils import secure_filename
+        import os
+        
+        if 'screenshot' not in request.files:
+            return jsonify({"error": "No screenshot file"}), 400
+        
+        file = request.files['screenshot']
+        camera_id = request.form.get('camera_id')
+        plate_id = request.form.get('plate_id')
+        
+        if file.filename == '':
+            return jsonify({"error": "Empty filename"}), 400
+        
+        # Create snapshots directory if it doesn't exist
+        snapshots_dir = 'snapshots'
+        if not os.path.exists(snapshots_dir):
+            os.makedirs(snapshots_dir)
+        
+        # Save file
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(snapshots_dir, filename)
+        file.save(filepath)
+        
+        return jsonify({
+            "success": True,
+            "screenshot_path": filepath,
+            "filename": filename
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/cameras/<camera_id>/violations', methods=['GET'])
+def get_camera_violations(camera_id):
+    """Get existing violations with screenshots for a camera."""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT 
+                v.violation_id,
+                v.plate_id,
+                v.violation_code,
+                v.date_of_violation,
+                ai.speed_detected,
+                ai.speed_limit,
+                ai.camera_id,
+                ai.screenshot_path
+            FROM violations v
+            JOIN ai_violations ai ON v.violation_id = ai.violation_id
+            WHERE ai.camera_id = %s
+              AND ai.screenshot_path IS NOT NULL
+            ORDER BY v.date_of_violation DESC
+            LIMIT 10
+        """, (camera_id,))
+        
+        violations = []
+        for row in cur:
+            screenshot_path = row[7]
+            screenshot_url = f'/snapshots/{Path(screenshot_path).name}' if screenshot_path else None
+            
+            violations.append({
+                'violation_id': row[0],
+                'plate_id': row[1],
+                'violation_code': row[2],
+                'date': row[3].isoformat() if row[3] else None,
+                'speed_detected': row[4],
+                'speed_limit': row[5],
+                'camera_id': row[6],
+                'screenshot_url': screenshot_url,
+            })
+        
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "camera_id": camera_id,
+            "violations": violations
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/cameras/<camera_id>/run-detection', methods=['POST'])
+def run_cv_detection(camera_id):
+    """Run Python CV detector and return violations with screenshots."""
+    import subprocess
+    from datetime import datetime, timedelta
+    
+    # Map camera IDs to video files
+    video_map = {
+        'CAM-1': 'frontend-react/public/timesquare.mp4',
+        'CAM-2': 'frontend-react/public/wallstreet.mp4',
+        'CAM-3': 'frontend-react/public/brooklyn.mp4',
+        'CAM-4': 'frontend-react/public/hudson valley albany.mp4',
+    }
+    
+    if camera_id not in video_map:
+        return jsonify({"error": f"Unknown camera: {camera_id}"}), 404
+    
+    video_path = video_map[camera_id]
+    
+    # Record start time to only get NEW violations
+    detection_start = datetime.now()
+    
+    try:
+        # Run the Python CV detector
+        print(f"🎥 Running CV detection for {camera_id}...")
+        result = subprocess.run(
+            ['python', 'cv_detector_realtime.py', '--camera-id', camera_id, '--video', video_path, '--no-display'],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        print(f"CV output: {result.stdout}")
+        if result.stderr:
+            print(f"CV stderr: {result.stderr}")
+        
+        # Get ONLY the violations created during THIS detection session
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # Get violations created in the last 2 minutes (this session only)
+        cur.execute("""
+            SELECT 
+                v.violation_id,
+                v.plate_id,
+                v.violation_code,
+                v.date_of_violation,
+                ai.speed_detected,
+                ai.speed_limit,
+                ai.camera_id,
+                ai.screenshot_path
+            FROM violations v
+            JOIN ai_violations ai ON v.violation_id = ai.violation_id
+            WHERE ai.camera_id = %s
+              AND v.date_of_violation >= %s
+            ORDER BY v.date_of_violation DESC
+            LIMIT 5
+        """, (camera_id, detection_start - timedelta(seconds=10)))
+        
+        violations = []
+        seen_plates = set()  # Prevent duplicate plates
+        
+        for row in cur:
+            plate_id = row[1]
+            # Skip if we already have this plate (prevent duplicates)
+            if plate_id in seen_plates:
+                continue
+            seen_plates.add(plate_id)
+            
+            screenshot_path = row[7]
+            screenshot_url = None
+            if screenshot_path:
+                # Get just the filename from the path
+                screenshot_filename = Path(screenshot_path).name
+                screenshot_url = f'/snapshots/{screenshot_filename}'
+                print(f"  Screenshot URL: {screenshot_url}")
+            
+            violations.append({
+                'violation_id': row[0],
+                'plate_id': plate_id,
+                'violation_code': row[2],
+                'date': row[3].isoformat() if row[3] else None,
+                'speed_detected': row[4],
+                'speed_limit': row[5],
+                'camera_id': row[6],
+                'screenshot_url': screenshot_url,
+            })
+        
+        cur.close()
+        conn.close()
+        
+        print(f"✓ Returning {len(violations)} violations with screenshots")
+        
+        return jsonify({
+            "success": True,
+            "camera_id": camera_id,
+            "violations_count": len(violations),
+            "violations": violations,
+            "message": f"Detection complete. Found {len(violations)} violations."
+        })
+        
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Detection timed out"}), 500
+    except Exception as e:
+        print(f"Error running CV detection: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/recent-violations')
+def get_recent_violations():
+    """Get recent violations with screenshots for map display."""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # Get recent AI violations with screenshots
+        cur.execute("""
+            SELECT 
+                v.violation_id,
+                v.plate_id,
+                v.plate_state,
+                v.latitude,
+                v.longitude,
+                v.violation_code,
+                v.date_of_violation,
+                v.police_agency,
+                ai.speed_detected,
+                ai.speed_limit,
+                ai.camera_id,
+                ai.screenshot_path
+            FROM violations v
+            JOIN ai_violations ai ON v.violation_id = ai.violation_id
+            WHERE ai.screenshot_path IS NOT NULL
+            ORDER BY v.date_of_violation DESC
+            LIMIT 50
+        """)
+        
+        violations = []
+        for row in cur:
+            violations.append({
+                'violation_id': row[0],
+                'plate_id': row[1],
+                'plate_state': row[2],
+                'latitude': float(row[3]) if row[3] else None,
+                'longitude': float(row[4]) if row[4] else None,
+                'violation_code': row[5],
+                'date': row[6].isoformat() if row[6] else None,
+                'police_agency': row[7],
+                'speed_detected': row[8],
+                'speed_limit': row[9],
+                'camera_id': row[10],
+                'screenshot_url': f'/snapshots/{Path(row[11]).name}' if row[11] else None,
+            })
+        
+        cur.close()
+        conn.close()
+        
+        return jsonify(violations)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
     print("=" * 60)
     print("  Stop Super Speeders - API Server")
@@ -622,12 +910,16 @@ if __name__ == '__main__':
     print("\n  Camera Endpoints:")
     print("    GET  /api/cameras")
     print("    GET  /api/cameras/<id>")
-    print("    POST /api/cameras/<id>/simulate")
+    print("    POST /api/cameras/<id>/detect")
     print("\n  Driver & Alert Endpoints:")
     print("    GET  /api/drivers")
     print("    GET  /api/drivers/<plate_id>")
     print("    GET  /api/alerts")
     print("    GET  /api/ai-heatmap")
+    print("    GET  /api/recent-violations")
+    print("\n  Screenshots:")
+    print("    GET  /snapshots/<filename>")
+    print("\n  Demo:")
     print("    POST /api/reset-demo")
     print("=" * 60)
     app.run(debug=True, host='0.0.0.0', port=5001)

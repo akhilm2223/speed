@@ -1,38 +1,59 @@
 import { Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 
-// Clean camera icon - Green glow = LIVE, Red pulse = ALERT detected
+// Modern white glowing camera icon
 const createCameraIcon = (isActive, hasAlert = false, alertCount = 0) => {
-  // Map colors: Green = active camera, White = inactive, Red pulse = alert
-  const color = isActive ? '#00ff00' : '#ffffff';
+  const glowColor = hasAlert ? 'rgba(255, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.9)';
   const pulseClass = hasAlert ? 'pulsing' : (isActive ? 'active' : '');
   
   return L.divIcon({
     html: `
-      <div class="camera-marker-container ${pulseClass}">
+      <div class="camera-marker-container ${pulseClass}" style="filter: drop-shadow(0 0 12px ${glowColor});">
         ${hasAlert ? `<div class="camera-alert-badge">${alertCount}</div>` : ''}
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="40" height="40">
-          <!-- Camera body -->
-          <rect x="8" y="16" width="24" height="16" rx="2" fill="#1a1a2e" stroke="${color}" stroke-width="2"/>
-          <!-- Lens housing -->
-          <circle cx="20" cy="24" r="6" fill="#0a0a15" stroke="${color}" stroke-width="1.5"/>
-          <!-- Lens -->
-          <circle cx="20" cy="24" r="3" fill="${color}" opacity="0.9"/>
-          <!-- Inner lens -->
-          <circle cx="20" cy="24" r="1.5" fill="#0a0a15"/>
-          <!-- Recording light - always red -->
-          <circle cx="28" cy="19" r="2" fill="#ff0000" class="recording-light"/>
-          <!-- Mount arm -->
-          <path d="M32 20 L38 16 L38 32 L32 28" fill="#1a1a2e" stroke="${color}" stroke-width="1.5"/>
-          <!-- Wall mount -->
-          <rect x="38" y="14" width="4" height="20" rx="1" fill="#1a1a2e" stroke="${color}" stroke-width="1.5"/>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="48" height="48">
+          <!-- Outer glow circle -->
+          <circle cx="32" cy="32" r="28" fill="rgba(255, 255, 255, 0.1)" opacity="0.5"/>
+          
+          <!-- Camera body - modern design -->
+          <rect x="18" y="22" width="28" height="20" rx="3" fill="#ffffff" stroke="none"/>
+          
+          <!-- Lens outer ring -->
+          <circle cx="32" cy="32" r="8" fill="#1a1a2e" stroke="#ffffff" stroke-width="2"/>
+          
+          <!-- Lens glass effect -->
+          <circle cx="32" cy="32" r="6" fill="url(#lensGradient)"/>
+          
+          <!-- Lens reflection -->
+          <circle cx="30" cy="30" r="2" fill="rgba(255, 255, 255, 0.6)"/>
+          
+          <!-- Recording indicator -->
+          <circle cx="42" cy="26" r="2.5" fill="#ff0000">
+            <animate attributeName="opacity" values="1;0.3;1" dur="1.5s" repeatCount="indefinite"/>
+          </circle>
+          
+          <!-- Microphone holes -->
+          <circle cx="22" cy="26" r="1" fill="#1a1a2e"/>
+          <circle cx="22" cy="30" r="1" fill="#1a1a2e"/>
+          <circle cx="22" cy="34" r="1" fill="#1a1a2e"/>
+          
+          <!-- Mount bracket -->
+          <path d="M46 28 L52 24 L52 40 L46 36 Z" fill="#ffffff" opacity="0.9"/>
+          
+          <!-- Gradient definitions -->
+          <defs>
+            <radialGradient id="lensGradient">
+              <stop offset="0%" stop-color="#4a90e2"/>
+              <stop offset="50%" stop-color="#2c5aa0"/>
+              <stop offset="100%" stop-color="#1a1a2e"/>
+            </radialGradient>
+          </defs>
         </svg>
       </div>
     `,
     className: `camera-icon-wrapper ${hasAlert ? 'has-alert' : ''}`,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-    popupAnchor: [0, -20]
+    iconSize: [48, 48],
+    iconAnchor: [24, 24],
+    popupAnchor: [0, -24]
   });
 };
 

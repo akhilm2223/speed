@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS ai_violations (
     is_school_zone BOOLEAN,
     latitude       DECIMAL(10, 8),
     longitude      DECIMAL(11, 8),
+    screenshot_path TEXT,
     detected_at    TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Computer Vision detector for traffic camera feeds.
-Uses YOLO for vehicle detection and simulates plate recognition.
+Real-time Vehicle Detection & Speed Enforcement System
+Uses YOLO for vehicle detection, tracking, and speed estimation.
 
 Usage:
-    python cv_detector.py --video path/to/video.mp4
+    python cv_detector.py --camera-id CAM-1 --video frontend-react/public/timesquare.mp4
+    python cv_detector.py --camera-id CAM-2 --video frontend-react/public/wallstreet.mp4
 """
 import cv2
 import numpy as np
@@ -12,6 +13,10 @@ from pathlib import Path
 import json
 import time
 import random
+import requests
+from datetime import datetime
+from collections import defaultdict
+import argparse
 
 # Try to import ultralytics for YOLO
 try:
@@ -19,34 +24,174 @@ try:
     YOLO_AVAILABLE = True
 except ImportError:
     YOLO_AVAILABLE = False
-    print("Warning: ultralytics not installed. Run: pip install ultralytics")
+    print("Warning: ultralytics not installed. Using simulated detection.")
+    print("Install with: pip install ultralytics")
 
 
+# =============================================================================
+# CAMERA CONFIGURATIONS
+# =============================================================================
+CAMERA_CONFIG = {
+    "CAM-1": {
+        "name": "Times Square",
+        "location": "Times Square, Manhattan",
+        "speed_limit_mph": 15,
+        "pixels_per_meter": 10.0,
+        "fps": 30,
+    },
+    "CAM-2": {
+        "name": "Wall Street",
+        "location": "Wall Street, Manhattan",
+        "speed_limit_mph": 30,
+        "pixels_per_meter": 8.0,
+        "fps": 30,
+    },
+    "CAM-3": {
+        "name": "Barclays Center",
+        "location": "Barclays Center, Brooklyn",
+        "speed_limit_mph": 30,
+        "pixels_per_meter": 8.0,
+        "fps": 30,
+    },
+    "CAM-4": {
+        "name": "Hudson Valley Albany",
+        "location": "Hudson Valley, Albany",
+        "speed_limit_mph": 55,
+        "pixels_per_meter": 6.0,
+        "fps": 30,
+    },
+}
+
+# Violation code mapping based on mph over limit
+def pick_violation_code(mph_over):
+    """Map speed over limit to NY VTL 1180 violation code."""
+    if mph_over <= 10:
+        return "1180A"  # 1-10 over (2 pts)
+    elif mph_over <= 20:
+        return "1180B"  # 11-20 over (3 pts)
+    elif mph_over <= 30:
+        return "1180C"  # 21-30 over (5 pts)
+    else:
+        return "1180D"  # 31+ over (8 pts, severe)
+
+
+# =============================================================================
+# SIMPLE TRACKER (Nearest Neighbor Matching)
+# =============================================================================
+class SimpleTracker:
+    """Simple nearest-neighbor tracker for vehicle IDs."""
+    
+    def __init__(self, max_distance=100):
+        self.tracks = {}
+        self.next_id = 1
+        self.max_distance = max_distance
+    
+    def update(self, detections):
+        """Update tracks with new detections. Returns list of tracked objects."""
+        if not detections:
+            return []
+        
+        # Get centers of new detections
+        det_centers = [self._get_center(d['bbox']) for d in detections]
+        
+        # Match with existing tracks
+        matched_tracks = []
+        unmatched_dets = list(range(len(detections)))
+        
+        if self.tracks:
+            # Calculate distances between existing tracks and new detections
+            track_ids = list(self.tracks.keys())
+            track_centers = [self.tracks[tid]['center'] for tid in track_ids]
+            
+            for i, det_center in enumerate(det_centers):
+                min_dist = float('inf')
+                best_track = None
+                
+                for j, track_center in enumerate(track_centers):
+                    dist = np.linalg.norm(np.array(det_center) - np.array(track_center))
+                    if dist < min_dist and dist < self.max_distance:
+                        min_dist = dist
+                        best_track = track_ids[j]
+                
+                if best_track is not None:
+                    # Update existing track
+                    self.tracks[best_track]['bbox'] = detections[i]['bbox']
+                    self.tracks[best_track]['center'] = det_center
+                    self.tracks[best_track]['class'] = detections[i]['class']
+                    self.tracks[best_track]['conf'] = detections[i]['conf']
+                    matched_tracks.append(best_track)
+                    unmatched_dets.remove(i)
+        
+        # Create new tracks for unmatched detections
+        for i in unmatched_dets:
+            track_id = self.next_id
+            self.next_id += 1
+            self.tracks[track_id] = {
+                'id': track_id,
+                'bbox': detections[i]['bbox'],
+                'center': det_centers[i],
+                'class': detections[i]['class'],
+                'conf': detections[i]['conf'],
+            }
+            matched_tracks.append(track_id)
+        
+        # Return active tracks
+        return [self.tracks[tid] for tid in matched_tracks]
+    
+    def _get_center(self, bbox):
+        """Get center point of bounding box."""
+        x, y, w, h = bbox
+        return (x + w/2, y + h/2)
+
+
+# =============================================================================
+# TRAFFIC DETECTOR WITH SPEED ESTIMATION
+# =============================================================================
 class TrafficDetector:
-    """Detects vehicles and simulates plate recognition."""
+    """Detects vehicles, tracks them, estimates speed, and flags violations."""
     
     # Vehicle classes in COCO dataset
     VEHICLE_CLASSES = {2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck'}
     
-    # Simulated plates for demo (will be "detected" on vehicles)
-    DEMO_PLATES = [
-        "NYC-SPEED-01", "NYC-SPEED-02", "MN-FAST-77", "TS-TAXI-42",
-        "ABC-1234", "XYZ-5678", "NY-DEMO-99"
-    ]
     
-    def __init__(self, model_path='yolov8n.pt'):
-        """Initialize detector with YOLO model."""
+    def __init__(self, camera_id, config, api_base='http://localhost:5001'):
+        """Initialize detector with camera config."""
+        self.camera_id = camera_id
+        self.config = config
+        self.api_base = api_base
+        
+        # Initialize YOLO model
         self.model = None
         if YOLO_AVAILABLE:
             try:
-                self.model = YOLO(model_path)
-                print(f"✓ YOLO model loaded: {model_path}")
+                self.model = YOLO('yolov8n.pt')  # Nano model for speed
+                print(f"✓ YOLO model loaded: yolov8n.pt")
             except Exception as e:
-                print(f"Warning: Could not load YOLO model: {e}")
+                print(f"⚠ Could not load YOLO: {e}. Using simulated detection.")
         
-        self.detection_history = []
-        self.tracked_vehicles = {}
-        self.next_vehicle_id = 1
+        # Initialize tracker
+        self.tracker = SimpleTracker(max_distance=150)
+        
+        # Track state per vehicle
+        self.vehicle_state = defaultdict(lambda: {
+            'speed_mph': 0,
+            'last_center': None,
+            'last_time': None,
+            'has_violated': False,
+            'plate': self._generate_plate(),
+            'color': 'green',
+            'violation_count': 0,
+        })
+        
+        # Snapshot directory
+        self.snapshot_dir = Path('snapshots')
+        self.snapshot_dir.mkdir(exist_ok=True)
+    
+    def _generate_plate(self):
+        """Generate realistic NY license plate."""
+        letters = ''.join(random.choices('ABCDEFGHJKLMNPRSTUVWXYZ', k=3))
+        numbers = ''.join(random.choices('0123456789', k=4))
+        return f"{letters}-{numbers}"
     
     def detect_frame(self, frame, confidence_threshold=0.5):
         """

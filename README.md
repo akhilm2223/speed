@@ -1,8 +1,19 @@
 # 🛡️ Stop Super Speeders - NY ISA Enforcement System
 
-A comprehensive **Intelligent Speed Assistance (ISA)** enforcement platform for New York State that identifies high-risk drivers and prevents fatal crashes using real statewide traffic violation data.
+A comprehensive **Intelligent Speed Assistance (ISA)** enforcement platform for New York State that identifies high-risk drivers and prevents fatal crashes using real statewide traffic violation data combined with AI-powered speed camera detection.
 
 **Built for the NY State Safe Streets Hackathon**
+
+---
+
+## 🎯 Project Overview
+
+This system combines:
+- **Real NY State violation data** (700,000+ records from data.ny.gov)
+- **AI-powered speed cameras** with YOLO vehicle detection
+- **Real-time violation screenshots** captured and displayed on map
+- **DMV enforcement workflow** for ISA device installation
+- **Interactive statewide map** with violation heatmap visualization
 
 ---
 
@@ -49,7 +60,7 @@ npm install
 cd ..
 ```
 
-### 4. Load Data
+### 4. Initialize Database & Load Data
 ```bash
 # Apply database schema
 python -c "import psycopg; from dotenv import load_dotenv; import os; load_dotenv(); conn = psycopg.connect(host=os.getenv('DB_HOST'), port=os.getenv('DB_PORT'), dbname=os.getenv('DB_NAME'), user=os.getenv('DB_USER'), password=os.getenv('DB_PASSWORD')); cur = conn.cursor(); cur.execute(open('sql/schema.sql').read()); conn.commit(); print('✓ Schema applied')"
@@ -57,39 +68,16 @@ python -c "import psycopg; from dotenv import load_dotenv; import os; load_doten
 # Load NY State violations (default: 500K violations)
 python generate_ny_state_violations.py
 
-# Optional: Load more violations for statewide coverage
-python generate_ny_state_violations.py --limit 1000000
-
-# Seed AI cameras (for camera detection demo)
+# Seed AI cameras
 python seed_cameras_simple.py
+
+# Check database status
+python check_database.py
 ```
 
-**Note:** The data generation script fetches real violations from NY State Open Data API (data.ny.gov). For large datasets (1M+), consider using a SODA API app token for higher rate limits (see `generate_ny_state_violations.py` for details).
-
-### 5. (Optional) Generate Sample Court CSV
+### 5. Start Application
 ```bash
-# Generate a sample court CSV file for testing
-python generate_sample_court_csv.py
-
-# Generate with custom count and output file
-python generate_sample_court_csv.py --count 500 --output my_court.csv
-
-# Generate for a specific court (by index)
-python generate_sample_court_csv.py --count 1000 --court-index 0
-```
-
-### 6. (Optional) Ingest Court CSV via Command Line
-```bash
-# Ingest a court CSV file into the database
-python ingest_court_csv.py court_violations.csv
-
-# Ingest with custom batch size
-python ingest_court_csv.py --file my_court_data.csv --batch-size 500
-```
-
-### 7. Start Application
-```bash
-# Terminal 1: Backend
+# Terminal 1: Backend API
 python api.py
 
 # Terminal 2: Frontend (new terminal)
@@ -97,114 +85,56 @@ cd frontend-react
 npm start
 ```
 
-### 8. Access Application
+### 6. Access Application
 | URL | Description |
 |-----|-------------|
-| **http://localhost:3000/dmv** | 🛡️ DMV Dashboard |
-| **http://localhost:3000/map** | 🗺️ Violation Map |
-| **http://localhost:3000/courts-upload** | 📤 Local Court CSV Upload |
-| **http://localhost:3000/dmv/drivers/:plateId** | 👤 Driver Profile |
-
----
-
-## 🎯 What It Does
-
-- **Identifies high-risk drivers** who meet ISA installation thresholds (11+ points OR 16+ speeding tickets)
-- **Calculates crash risk scores** based on violation severity, nighttime patterns, and cross-county behavior
-- **Manages DMV enforcement workflow** from detection → notice → compliance
-- **Visualizes 700,000+ violations** on an interactive statewide map
-- **Integrates AI speed cameras** with real-time violation detection
-- **Supports 1,800+ local courts** across all 62 NY counties
-
----
-
-## 📊 Current Data
-
-| Metric | Count |
-|--------|-------|
-| **Total Violations** | 700,000+ |
-| **High-Risk Drivers** | 15,421 |
-| **Counties Covered** | All 62 NY counties |
-| **Courts Detected** | 1,800+ local courts |
-| **Police Agencies** | 700+ agencies |
-| **AI Cameras** | 3 (demo) |
-
----
-
-## 🔍 How It Works
-
-### 1. Data Ingestion
-- **NY State Open Data** (data.ny.gov)
-  - Dataset: Traffic Tickets Issued: Four Year Window (10.7M records, Updated Apr 2025)
-  - Covers all 62 counties, 1,800+ courts, 700+ police agencies
-  - Script: `generate_ny_state_violations.py`
-- **Local Court CSV Upload**
-  - Web interface: `/courts-upload` page for drag-and-drop CSV uploads
-  - Command-line tool: `ingest_court_csv.py` for batch processing
-  - Sample generator: `generate_sample_court_csv.py` for testing
-  - Validates required fields, processes violations, and updates driver summaries
-- **NYC Open Data** (optional)
-  - Script: `ingest.py` for NYC parking violations
-- All data stored in PostgreSQL with driver info, coordinates, and court data
-
-### 2. Risk Calculation
-```python
-# ISA Policy Thresholds
-ISA_POINTS_THRESHOLD = 11    # ISA required at 11+ points
-ISA_TICKET_THRESHOLD = 16    # OR 16+ speeding tickets
-
-# Points Per Violation
-1180A = 2 points   # 1-10 mph over
-1180B = 3 points   # 11-20 mph over
-1180C = 5 points   # 21-30 mph over
-1180D = 8 points   # 31+ mph over (SEVERE)
-
-# Crash Risk Formula
-Crash Risk = (severity × 60%) + (nighttime × 30%) + (cross-county × 10%)
-```
-
-### 3. Enforcement Workflow
-```
-NEW → NOTICE_SENT → FOLLOW_UP_DUE → COMPLIANT
-                                  ↘ ESCALATED
-```
-
-### 4. AI Camera Integration
-1. YOLO detects vehicle
-2. OCR reads license plate
-3. Calculates speed violation
-4. Logs to database
-5. Creates DMV alert if high-risk
+| **http://localhost:3000/dmv** | 🛡️ DMV Dashboard - Enforcement queue & analytics |
+| **http://localhost:3000/map** | 🗺️ Violation Map - Interactive map with AI cameras |
+| **http://localhost:3000/courts-upload** | 📤 Court CSV Upload - Bulk violation import |
+| **http://localhost:3000/dmv/drivers/:plateId** | 👤 Driver Profile - Individual driver details |
 
 ---
 
 ## 🎨 Key Features
 
-### DMV Dashboard
-- **Impact Strip** - Lives saved, pending notices, cross-jurisdiction offenders
-- **KPI Cards** - ISA required, monitoring, super speeders
-- **County Risk Cards** - Top risk counties, most severe violations
-- **Enforcement Queue** - Sortable table with risk badges and batch actions
-- **Local Courts Panel** - 1,800+ courts supported statewide
+### 1. Interactive Violation Map (`/map`)
+- **700,000+ violation points** rendered on high-performance HTML5 Canvas
+- **Color-coded severity**: Blue (1-10 mph over) → Yellow (11-20) → Orange (21-30) → Red (31+ mph over)
+- **AI Camera markers** with glowing white icons
+- **Click cameras** to view live video feed and run AI detection
+- **Violation screenshots** displayed on left panel when camera detects speeders
+- **Mode toggle**: Statewide / NYC Only / Suffolk County views
 
-### Local Court CSV Upload
-- **Web Interface** - Drag-and-drop CSV file upload with preview
-- **Validation** - Real-time CSV structure validation and error reporting
-- **Batch Processing** - Efficient bulk insertion with progress tracking
-- **Auto-Integration** - Automatically updates driver summaries and generates ISA alerts
-- **Sample Generator** - `generate_sample_court_csv.py` creates realistic test data
+### 2. AI Speed Camera Detection
+- **YOLO-based vehicle detection** using YOLOv8
+- **Real-time speed estimation** based on vehicle tracking
+- **Automatic screenshot capture** with violation details overlay
+- **Screenshots include**:
+  - License plate (simulated)
+  - Speed detected vs speed limit
+  - Violation code (1180A-D)
+  - Camera location and timestamp
+  - Points assessment
+- **Screenshots displayed** on map left panel when viewing camera
 
-### Driver Profile
-- **Crash Risk Score** - 0-100 with color-coded danger levels
-- **Risk Factors** - Severity, nighttime, cross-jurisdiction badges
-- **Violation Timeline** - Chronological list with points
-- **Enforcement Actions** - Send notice, mark compliant, escalate
+### 3. DMV Enforcement Dashboard (`/dmv`)
+- **Impact Metrics**: Lives saved estimate, pending notices, cross-jurisdiction offenders
+- **KPI Cards**: ISA required count, monitoring count, super speeders
+- **County Risk Analysis**: Top risk counties with violation counts
+- **Enforcement Queue**: Sortable table with risk badges and batch actions
+- **Local Courts Panel**: 1,800+ courts supported statewide
 
-### Interactive Map
-- **700,000+ violation points** rendered on HTML5 Canvas
-- **Color-coded by severity** - Blue (low) → Red (severe)
-- **Mode toggle** - Statewide / NYC / Suffolk County views
-- **AI camera markers** - Live detection alerts
+### 4. Driver Profile (`/dmv/drivers/:plateId`)
+- **Crash Risk Score**: 0-100 with color-coded danger levels
+- **Risk Factors**: Severity, nighttime violations, cross-jurisdiction badges
+- **Violation Timeline**: Chronological list with points per violation
+- **Enforcement Actions**: Send notice, mark compliant, escalate
+
+### 5. Court CSV Upload (`/courts-upload`)
+- **Drag-and-drop interface** for CSV file upload
+- **Real-time validation** of CSV structure
+- **Batch processing** with progress tracking
+- **Auto-integration** with driver summaries and ISA alerts
 
 ---
 
@@ -212,37 +142,48 @@ NEW → NOTICE_SENT → FOLLOW_UP_DUE → COMPLIANT
 
 ```
 Stop-Super-Speeders/
-├── api.py                          # Main Flask API (heatmap, cameras)
-├── api_dmv.py                      # DMV enforcement endpoints
-├── isa_policy.py                   # ISA policy & risk calculation
+├── api.py                          # Main Flask API server
+├── api_dmv.py                      # DMV enforcement endpoints (Blueprint)
+├── isa_policy.py                   # ISA policy rules & risk calculation
+├── cv_detector_realtime.py         # AI camera detection with YOLO
+├── cv_detector.py                  # Legacy CV detector
 ├── generate_ny_state_violations.py # NY State data ingestion
+├── generate_sample_court_csv.py    # Sample court CSV generator
+├── ingest_court_csv.py             # Command-line CSV ingestion
 ├── ingest.py                       # NYC Open Data ingestion
-├── generate_sample_court_csv.py    # Generate sample court CSV files
-├── ingest_court_csv.py             # Command-line court CSV ingestion
-├── cv_detector.py                  # AI camera detection (YOLO)
 ├── seed_cameras_simple.py          # Seed camera locations
+├── check_database.py               # Database status checker
 ├── requirements.txt                # Python dependencies
-├── .env                            # Database config
-├── new_york_state_coordinates.csv  # NY state coordinate data
+├── yolov8n.pt                      # YOLO model weights
+├── .env                            # Database configuration
+├── new_york_state_coordinates.csv  # NY coordinate data
+│
+├── snapshots/                      # AI camera violation screenshots
+│   └── CAM-X_PLATE_TIMESTAMP.jpg   # Screenshot files
 │
 ├── sql/
 │   ├── schema.sql                  # Database schema
 │   └── migrate_alerts.sql          # Migration scripts
 │
 └── frontend-react/
-    ├── package.json                # Node dependencies
+    ├── package.json
     ├── public/
-    │   ├── timesquare.mp4          # Camera feed video
-    │   └── data/                   # Static data files
+    │   ├── timesquare.mp4          # Camera feed videos
+    │   ├── wallstreet.mp4
+    │   ├── brooklyn.mp4
+    │   └── hudson valley albany.mp4
     └── src/
+        ├── index.jsx               # App entry point
+        ├── index.css               # Global styles
+        ├── App.jsx                 # Router configuration
         ├── pages/
         │   ├── DMVDashboard.jsx    # Main dashboard
-        │   ├── DriverProfile.jsx   # Driver details
-        │   ├── MapView.jsx         # Violation map
+        │   ├── DriverProfile.jsx   # Driver details page
+        │   ├── MapView.jsx         # Interactive map
         │   └── CourtsUpload.jsx    # CSV upload interface
         └── components/
             ├── CameraMarker.jsx    # Map camera icons
-            ├── CameraModal.jsx     # Video detection modal
+            ├── CameraModal.jsx     # Camera video + screenshots modal
             └── DriversSidebar.jsx  # Driver list sidebar
 ```
 
@@ -250,90 +191,182 @@ Stop-Super-Speeders/
 
 ## 📡 API Endpoints
 
-### DMV Enforcement (`/api/dmv`)
-| Endpoint | Description |
-|----------|-------------|
-| `GET /dashboard` | KPIs, queue, county stats |
-| `GET /drivers/<plate_id>` | Driver profile + violations |
-| `GET /alerts` | Activity log |
-| `POST /alerts/send` | Send ISA notice |
-| `POST /alerts/<id>/transition` | Update enforcement status |
-| `GET /county-stats` | County-level analytics |
-| `GET /impact-metrics` | Lives saved estimates |
-| `POST /local-courts/upload` | Upload court CSV file (web interface) |
+### Main API (`api.py`)
 
-### Map & Cameras (`/api`)
-| Endpoint | Description |
-|----------|-------------|
-| `GET /heatmap` | Violation points for map |
-| `GET /cameras` | Camera locations |
-| `POST /cameras/<id>/detect` | Process AI detection |
-| `GET /stats` | Database statistics |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/heatmap` | GET | Violation points for map (supports `?limit=N`) |
+| `/api/cameras` | GET | All camera locations |
+| `/api/cameras/<id>/violations` | GET | Existing violations with screenshots for camera |
+| `/api/cameras/<id>/run-detection` | POST | Run AI detection and return new violations |
+| `/api/cameras/<id>/detect` | POST | Log a detected violation |
+| `/api/recent-violations` | GET | Recent violations with screenshots |
+| `/api/stats` | GET | Database statistics |
+| `/api/stats/lives-saved` | GET | Lives saved estimate |
+| `/snapshots/<filename>` | GET | Serve violation screenshot images |
 
+### DMV API (`api_dmv.py` - Blueprint at `/api/dmv`)
 
-
-## 🔧 Tech Stack
-
-**Backend:** Flask, PostgreSQL, psycopg, python-dotenv  
-**Frontend:** React 18, React Router, Leaflet, HTML5 Canvas  
-**Data Sources:** 
-- NY State Open Data (data.ny.gov) - Traffic Tickets Issued dataset
-- NYC Open Data - Parking violations
-- Local court CSV uploads (web interface + command-line tool)
-
-**AI/CV:** OpenCV, YOLO (simulated for demo)
-
-## 📋 Database Schema
-
-The system uses a unified schema with these main tables:
-
-- **`vehicles`** - License plate registry
-- **`violations`** - All violations (manual + AI detected)
-- **`driver_license_summary`** - Aggregated driver stats (points, tickets)
-- **`ai_violations`** - AI camera detections (linked to violations)
-- **`cameras`** - Enforcement camera locations
-- **`dmv_alerts`** - ISA enforcement workflow tracking
-
-See `sql/schema.sql` for full schema definition.
-
-## 📝 Court CSV Format
-
-Local courts can upload violation data via CSV with the following required columns:
-
-**Required Fields:**
-- `driver_license_number` - Driver license number
-- `driver_full_name` - Full name of driver
-- `date_of_birth` - Date of birth (YYYY-MM-DD)
-- `license_state` - License state (default: NY)
-- `plate_id` - License plate number
-- `plate_state` - Plate state (default: NY)
-- `violation_code` - Violation code (1180A, 1180B, 1180C, 1180D, 1180E, 1180F)
-- `date_of_violation` - Violation date (YYYY-MM-DD HH:MM:SS or YYYY-MM-DD)
-- `disposition` - Disposition (GUILTY, NOT GUILTY, DISMISSED, PENDING)
-- `latitude` - Violation latitude (decimal)
-- `longitude` - Violation longitude (decimal)
-- `police_agency` - Issuing police agency
-- `ticket_issuer` - Court name
-
-**Example Usage:**
-```bash
-# Generate sample CSV
-python generate_sample_court_csv.py --count 1000 --output court_data.csv
-
-# Upload via web interface
-# Navigate to http://localhost:3000/courts-upload
-
-# Or ingest via command line
-python ingest_court_csv.py court_data.csv
-```
-
-## ⚠️ Known Issues & Notes
-
-- **Driver Summary Count:** The `driver_license_summary` table may show high counts if data generation creates too many unique drivers. This is expected with the current data generation approach.
-- **Data Volume:** Loading 1M+ violations may take 10-20 minutes depending on API rate limits. Use `--app-token` flag for higher limits.
-- **AI Camera Detection:** Currently uses simulated YOLO detection. For production, integrate with real YOLO/OCR models.
-- **CSV Upload:** Large CSV files (>10K rows) should use the command-line tool (`ingest_court_csv.py`) for better performance. The web interface is optimized for smaller files.
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/dashboard` | GET | KPIs, queue, county stats |
+| `/drivers/<plate_id>` | GET | Driver profile + violations |
+| `/alerts` | GET | Activity log |
+| `/alerts/send` | POST | Send ISA notice |
+| `/alerts/<id>/transition` | POST | Update enforcement status |
+| `/county-stats` | GET | County-level analytics |
+| `/impact-metrics` | GET | Lives saved estimates |
+| `/local-courts/upload` | POST | Upload court CSV file |
 
 ---
 
+## 🔧 Technical Details
 
+### ISA Policy Configuration (`isa_policy.py`)
+
+```python
+# Points Per Violation Code (NY VTL 1180)
+1180A = 2 points   # 1-10 mph over limit
+1180B = 3 points   # 11-20 mph over limit
+1180C = 5 points   # 21-30 mph over limit
+1180D = 8 points   # 31+ mph over limit (SEVERE)
+1180E = 6 points   # School zone speeding
+1180F = 6 points   # Work zone speeding
+
+# ISA Requirement Thresholds (either triggers ISA)
+ISA_POINTS_THRESHOLD = 11    # ISA required at 11+ points
+ISA_TICKET_THRESHOLD = 16    # OR 16+ speeding tickets
+
+# Monitoring Band
+MONITORING_MIN_POINTS = 6    # Start monitoring at 6 points
+```
+
+### Crash Risk Formula
+
+```python
+Crash Risk = (severity_factor × 60%) + (nighttime_factor × 30%) + (cross_jurisdiction × 10%)
+
+# Where:
+# - severity_factor: normalized points / ISA threshold
+# - nighttime_factor: % of violations between 10pm-4am
+# - cross_jurisdiction: 1 if multiple boroughs/counties, 0 otherwise
+```
+
+### AI Camera Detection (`cv_detector_realtime.py`)
+
+- **Model**: YOLOv8n (nano) for fast inference
+- **Vehicle Classes**: Car, Motorcycle, Bus, Truck
+- **Speed Estimation**: Pixel displacement over time with calibration
+- **Violation Threshold**: Only captures SEVERE violations (20+ mph over limit)
+- **Max Violations**: 5 per detection session to prevent duplicates
+- **Screenshot Format**: Full frame + info panel with violation details
+
+### Database Schema
+
+| Table | Purpose |
+|-------|---------|
+| `vehicles` | License plate registry |
+| `violations` | All violations (manual + AI detected) |
+| `driver_license_summary` | Aggregated driver stats (points, tickets) |
+| `ai_violations` | AI camera detections with screenshot paths |
+| `cameras` | Enforcement camera locations |
+| `dmv_alerts` | ISA enforcement workflow tracking |
+
+---
+
+## 🎥 AI Camera Locations
+
+| Camera ID | Location | Speed Limit | Video |
+|-----------|----------|-------------|-------|
+| CAM-1 | Times Square, Manhattan | 15 MPH | timesquare.mp4 |
+| CAM-2 | Wall Street, Manhattan | 30 MPH | wallstreet.mp4 |
+| CAM-3 | Barclays Center, Brooklyn | 30 MPH | brooklyn.mp4 |
+| CAM-4 | Hudson Valley, Albany | 55 MPH | hudson valley albany.mp4 |
+
+---
+
+## 📊 Data Sources
+
+1. **NY State Open Data** (data.ny.gov)
+   - Dataset: Traffic Tickets Issued: Four Year Window
+   - Records: 10.7M+ (we load 500K-1M for demo)
+   - Coverage: All 62 NY counties, 1,800+ courts, 700+ police agencies
+
+2. **AI Camera Detection**
+   - Real-time YOLO vehicle detection
+   - Simulated license plates and speeds
+   - Screenshots saved to `/snapshots/` directory
+
+3. **Local Court CSV Upload**
+   - Web interface for drag-and-drop upload
+   - Command-line tool for batch processing
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Backend** | Flask, PostgreSQL, psycopg3, python-dotenv |
+| **Frontend** | React 18, React Router v6, Leaflet, HTML5 Canvas |
+| **AI/CV** | OpenCV, Ultralytics YOLOv8, NumPy |
+| **Data** | NY State Open Data API, NYC Open Data |
+
+---
+
+## 📝 Usage Examples
+
+### Run AI Detection on a Camera
+```bash
+# Command line
+python cv_detector_realtime.py --camera-id CAM-3 --video frontend-react/public/brooklyn.mp4 --no-display
+
+# Or click a camera on the map UI
+```
+
+### Check Database Status
+```bash
+python check_database.py
+```
+
+### Generate Sample Court CSV
+```bash
+python generate_sample_court_csv.py --count 1000 --output court_data.csv
+```
+
+### Ingest Court CSV
+```bash
+python ingest_court_csv.py court_data.csv
+```
+
+---
+
+## ⚠️ Known Issues & Notes
+
+- **Screenshot Loading**: Screenshots are served from `/snapshots/` directory. Ensure the API server has access to this folder.
+- **Detection Time**: AI detection can take 30-60 seconds to process video. The UI shows existing violations first for faster response.
+- **Duplicate Prevention**: The CV detector tracks captured plates to prevent multiple screenshots of the same vehicle.
+- **Large Datasets**: Loading 1M+ violations may take 10-20 minutes. Use `--app-token` for higher API rate limits.
+
+---
+
+## 🔮 Future Enhancements
+
+- [ ] Real license plate OCR integration
+- [ ] Live camera feed support (RTSP streams)
+- [ ] Mobile app for field enforcement
+- [ ] Integration with NY DMV systems
+- [ ] Predictive crash risk modeling
+- [ ] Multi-state violation tracking
+
+---
+
+## 📄 License
+
+MIT License - Built for NY State Safe Streets Hackathon
+
+---
+
+## 👥 Contributors
+
+Built with ❤️ for safer New York streets
