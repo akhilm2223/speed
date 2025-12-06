@@ -20,6 +20,11 @@ function DMVDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sixteenPlusData, setSixteenPlusData] = useState(null);
   const [platesData, setPlatesData] = useState(null);
+  const [isaDrivers, setIsaDrivers] = useState(null);
+  const [isaPlates, setIsaPlates] = useState(null);
+  const [isaSummary, setIsaSummary] = useState(null);
+  const [warningDrivers, setWarningDrivers] = useState(null);
+  const [warningPlates, setWarningPlates] = useState(null);
   const navigate = useNavigate();
 
   // Enable page scrolling (override body overflow:hidden)
@@ -51,6 +56,7 @@ function DMVDashboard() {
     loadImpactMetrics();
     loadSixteenPlusData();
     loadPlatesData();
+    loadIsaData();
   }, []);
 
   const loadDashboard = async () => {
@@ -115,6 +121,31 @@ function DMVDashboard() {
       if (res.ok) setPlatesData(await res.json());
     } catch (err) {
       console.error('Error loading plates data:', err);
+    }
+  };
+
+  const loadIsaData = async () => {
+    try {
+      // Load ISA summary counts
+      const summaryRes = await fetch(`${API_BASE}/api/dmv/isa/summary`);
+      if (summaryRes.ok) setIsaSummary(await summaryRes.json());
+      
+      // Load drivers with 11+ points (24 month window)
+      const driversRes = await fetch(`${API_BASE}/api/dmv/isa/drivers-24m`);
+      if (driversRes.ok) setIsaDrivers(await driversRes.json());
+      
+      // Load plates with 16+ tickets (12 month window)
+      const platesRes = await fetch(`${API_BASE}/api/dmv/isa/plates-12m`);
+      if (platesRes.ok) setIsaPlates(await platesRes.json());
+      
+      // Load warning band data (near-threshold)
+      const warnDriversRes = await fetch(`${API_BASE}/api/dmv/isa/warnings/drivers`);
+      if (warnDriversRes.ok) setWarningDrivers(await warnDriversRes.json());
+      
+      const warnPlatesRes = await fetch(`${API_BASE}/api/dmv/isa/warnings/plates`);
+      if (warnPlatesRes.ok) setWarningPlates(await warnPlatesRes.json());
+    } catch (err) {
+      console.error('Error loading ISA data:', err);
     }
   };
 
@@ -254,28 +285,9 @@ function DMVDashboard() {
   return (
     <div className="dmv-dashboard">
       {/* HEADER */}
-      <header className="dmv-header">
-        <div className="header-left">
-          <div className="dmv-logo">
-            <span className="logo-text">NY DMV — ISA Enforcement Command</span>
-          </div>
-        </div>
-        <div className="header-right">
-          <div className="header-tabs">
-            <button 
-              className={`header-tab ${activeTab === 'dashboard' ? 'active' : ''}`}
-              onClick={() => setActiveTab('dashboard')}
-            >
-              Dashboard
-            </button>
-            <button 
-              className={`header-tab ${activeTab === 'sixteen-plus' ? 'active' : ''}`}
-              onClick={() => setActiveTab('sixteen-plus')}
-            >
-              16+ Tickets
-            </button>
-          </div>
-          <button className="nav-link" onClick={() => navigate('/map')}>Camera Network</button>
+      <header className="dmv-header centered">
+        <div className="dmv-logo">
+          <span className="logo-text">NY DMV — ISA Enforcement Command</span>
         </div>
       </header>
 
@@ -542,6 +554,376 @@ function DMVDashboard() {
           </div>
         </div>
       </div>
+      ) : activeTab === 'isa-list' ? (
+        /* ISA THRESHOLD LIST TAB */
+        <div className="isa-list-content">
+          <div className="isa-list-main">
+            {/* CSV Download Helper */}
+            {(() => {
+              // November stats calculation
+              const novemberDriverCount = isaDrivers?.data ? new Set(
+                isaDrivers.data.filter(d => 
+                  d.violations?.some(v => {
+                    const dt = new Date(v.date_of_violation);
+                    return !isNaN(dt) && dt.getMonth() === 10; // 0=Jan, 10=Nov
+                  })
+                ).map(d => d.driver_license_number)
+              ).size : 0;
+              
+              const novemberPlateCount = isaPlates?.data ? new Set(
+                isaPlates.data.filter(p => 
+                  p.violations?.some(v => {
+                    const dt = new Date(v.date_of_violation);
+                    return !isNaN(dt) && dt.getMonth() === 10;
+                  })
+                ).map(p => p.plate_id)
+              ).size : 0;
+
+              // CSV download function
+              const downloadCSV = (filename, rows) => {
+                if (!rows || rows.length === 0) return;
+                const header = Object.keys(rows[0]);
+                const csv = [
+                  header.join(","),
+                  ...rows.map(row =>
+                    header.map(h => JSON.stringify(row[h] ?? "")).join(",")
+                  )
+                ].join("\n");
+                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.setAttribute("download", filename);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              };
+
+              // Flatten drivers data for CSV
+              const flattenDriversForCSV = () => {
+                if (!isaDrivers?.data) return [];
+                return isaDrivers.data.flatMap(d => 
+                  d.violations?.map(v => ({
+                    license_number: d.driver_license_number,
+                    driver_name: d.driver_full_name,
+                    license_state: d.license_state,
+                    total_points: d.total_points,
+                    violation_count: d.violation_count,
+                    violation_code: v.violation_code,
+                    violation_date: v.date_of_violation,
+                    ticket_issuer: v.ticket_issuer,
+                    police_agency: v.police_agency,
+                    plate_id: v.plate_id,
+                    points: v.points
+                  })) || []
+                );
+              };
+
+              // Flatten plates data for CSV
+              const flattenPlatesForCSV = () => {
+                if (!isaPlates?.data) return [];
+                return isaPlates.data.flatMap(p => 
+                  p.violations?.map(v => ({
+                    plate_id: p.plate_id,
+                    plate_state: p.plate_state,
+                    ticket_count: p.ticket_count,
+                    driver_license_number: v.driver_license_number,
+                    violation_code: v.violation_code,
+                    violation_date: v.date_of_violation,
+                    ticket_issuer: v.ticket_issuer,
+                    police_agency: v.police_agency
+                  })) || []
+                );
+              };
+
+              // Send email stub
+              const sendEmailSummary = async () => {
+                try {
+                  const res = await fetch(`${API_BASE}/api/dmv/isa/send-summary`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      recipients: ["dmv@ny.gov", "isa-vendor@example.com"],
+                      drivers_count: isaSummary?.drivers_11_plus_points_24m || 0,
+                      plates_count: isaSummary?.plates_16_plus_tickets_12m || 0
+                    })
+                  });
+                  if (res.ok) {
+                    alert("✅ ISA summary email sent to DMV and vendor (demo stub)");
+                  }
+                } catch (err) {
+                  alert("Email stub triggered (backend not running)");
+                }
+              };
+
+              return (
+                <>
+                  {/* Action Bar */}
+                  <div className="isa-action-bar">
+                    <div className="isa-action-left">
+                      <h1 className="isa-page-title">ISA Threshold List</h1>
+                      <p className="isa-page-desc">
+                        Drivers and plates that trigger ISA requirements per NY State policy
+                      </p>
+                    </div>
+                    <div className="isa-action-buttons">
+                      <button 
+                        className="isa-btn export drivers"
+                        onClick={() => downloadCSV("drivers_isa_11pts_24m.csv", flattenDriversForCSV())}
+                      >
+                        📥 Export Drivers CSV
+                      </button>
+                      <button 
+                        className="isa-btn export plates"
+                        onClick={() => downloadCSV("plates_isa_16tickets_12m.csv", flattenPlatesForCSV())}
+                      >
+                        📥 Export Plates CSV
+                      </button>
+                      <button 
+                        className="isa-btn email"
+                        onClick={sendEmailSummary}
+                      >
+                        📧 Send ISA Email
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Summary Stats with November */}
+                  <div className="isa-stats-grid">
+                    <div className="isa-stat-card drivers">
+                      <div className="stat-value">{isaSummary?.drivers_11_plus_points_24m?.toLocaleString() || 0}</div>
+                      <div className="stat-label">Drivers ≥11 pts (24 mo)</div>
+                    </div>
+                    <div className="isa-stat-card plates">
+                      <div className="stat-value">{isaSummary?.plates_16_plus_tickets_12m?.toLocaleString() || 0}</div>
+                      <div className="stat-label">Plates ≥16 tickets (12 mo)</div>
+                    </div>
+                    <div className="isa-stat-card november drivers-nov">
+                      <div className="stat-value">{novemberDriverCount}</div>
+                      <div className="stat-label">Drivers triggered in Nov</div>
+                    </div>
+                    <div className="isa-stat-card november plates-nov">
+                      <div className="stat-value">{novemberPlateCount}</div>
+                      <div className="stat-label">Plates triggered in Nov</div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+
+            {/* DRIVERS TABLE - 11+ Points */}
+            <div className="isa-table-section">
+              <h2 className="isa-section-title drivers">
+                🚨 Drivers Requiring ISA (11+ Points in 24 Months)
+              </h2>
+              <p className="isa-section-desc">
+                Driver licenses that have accumulated {isaSummary?.points_threshold || 11}+ violation points in the trailing 24-month window
+              </p>
+              
+              {isaDrivers?.data?.length > 0 ? (
+                <div className="isa-table-wrapper">
+                  <table className="isa-table">
+                    <thead>
+                      <tr>
+                        <th>License #</th>
+                        <th>Name</th>
+                        <th>Violation Date</th>
+                        <th>Violation Code</th>
+                        <th>Ticket Issuer</th>
+                        <th>Police Agency</th>
+                        <th>Points</th>
+                        <th>Total Pts</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {isaDrivers.data.map((driver, idx) => (
+                        driver.violations?.map((v, vidx) => (
+                          <tr key={`${idx}-${vidx}`} className={vidx === 0 ? 'first-row' : ''}>
+                            {vidx === 0 && (
+                              <>
+                                <td rowSpan={driver.violations.length} className="license-cell">
+                                  <button 
+                                    className="license-link"
+                                    onClick={() => navigate(`/dmv/license/${driver.driver_license_number}`)}
+                                  >
+                                    {driver.driver_license_number}
+                                  </button>
+                                </td>
+                                <td rowSpan={driver.violations.length} className="name-cell">
+                                  {driver.driver_full_name}
+                                </td>
+                              </>
+                            )}
+                            <td>{v.date_of_violation ? new Date(v.date_of_violation).toLocaleDateString() : '-'}</td>
+                            <td><span className="violation-code">{v.violation_code}</span></td>
+                            <td>{v.ticket_issuer}</td>
+                            <td>{v.police_agency}</td>
+                            <td className="points-cell">{v.points}</td>
+                            {vidx === 0 && (
+                              <td rowSpan={driver.violations.length} className="total-points-cell">
+                                <span className="total-points-badge">{driver.total_points}</span>
+                              </td>
+                            )}
+                          </tr>
+                        ))
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="no-data">No drivers currently meet the 11+ points threshold</p>
+              )}
+              <div className="isa-count">
+                Showing {isaDrivers?.unique_drivers || 0} drivers with {isaDrivers?.data?.reduce((acc, d) => acc + (d.violations?.length || 0), 0) || 0} violations
+              </div>
+            </div>
+
+            {/* PLATES TABLE - 16+ Tickets */}
+            <div className="isa-table-section">
+              <h2 className="isa-section-title plates">
+                🚗 Plates with 16+ Tickets (12 Months)
+              </h2>
+              <p className="isa-section-desc">
+                Vehicle plates that have accumulated {isaSummary?.ticket_threshold || 16}+ speeding tickets in the trailing 12-month window
+              </p>
+              
+              {isaPlates?.data?.length > 0 ? (
+                <div className="isa-table-wrapper">
+                  <table className="isa-table">
+                    <thead>
+                      <tr>
+                        <th>Plate</th>
+                        <th>State</th>
+                        <th>Violation Date</th>
+                        <th>Violation Code</th>
+                        <th>Ticket Issuer</th>
+                        <th>Police Agency</th>
+                        <th>Total Tickets</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {isaPlates.data.map((plate, idx) => (
+                        plate.violations?.map((v, vidx) => (
+                          <tr key={`${idx}-${vidx}`} className={vidx === 0 ? 'first-row' : ''}>
+                            {vidx === 0 && (
+                              <>
+                                <td rowSpan={plate.violations.length} className="plate-cell">
+                                  <span className="plate-badge">{plate.plate_id}</span>
+                                </td>
+                                <td rowSpan={plate.violations.length}>{plate.plate_state}</td>
+                              </>
+                            )}
+                            <td>{v.date_of_violation ? new Date(v.date_of_violation).toLocaleDateString() : '-'}</td>
+                            <td><span className="violation-code">{v.violation_code}</span></td>
+                            <td>{v.ticket_issuer}</td>
+                            <td>{v.police_agency}</td>
+                            {vidx === 0 && (
+                              <td rowSpan={plate.violations.length} className="total-tickets-cell">
+                                <span className="total-tickets-badge">{plate.ticket_count}</span>
+                              </td>
+                            )}
+                          </tr>
+                        ))
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="no-data">No plates currently meet the 16+ tickets threshold</p>
+              )}
+              <div className="isa-count">
+                Showing {isaPlates?.unique_plates || 0} plates with {isaPlates?.data?.reduce((acc, p) => acc + (p.violations?.length || 0), 0) || 0} violations
+              </div>
+            </div>
+
+            {/* WARNING BAND SECTION */}
+            <div className="isa-warning-section">
+              <h2 className="isa-warning-title">⚠️ Warning Band — Approaching Threshold</h2>
+              <p className="isa-section-desc">
+                Drivers and plates that are close to triggering ISA requirements. Proactive outreach recommended.
+              </p>
+              
+              <div className="isa-warning-grid">
+                {/* Warning Drivers (8-10 points) */}
+                <div className="isa-warning-card">
+                  <div className="warning-card-header drivers">
+                    <span className="warning-icon">👤</span>
+                    <span className="warning-label">Drivers 8-10 Points</span>
+                    <span className="warning-count">{warningDrivers?.count || 0}</span>
+                  </div>
+                  {warningDrivers?.data?.length > 0 ? (
+                    <div className="warning-table-wrapper">
+                      <table className="warning-table">
+                        <thead>
+                          <tr>
+                            <th>License</th>
+                            <th>Name</th>
+                            <th>Points</th>
+                            <th>To Threshold</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {warningDrivers.data.slice(0, 10).map((d, i) => (
+                            <tr key={i}>
+                              <td>
+                                <button 
+                                  className="license-link"
+                                  onClick={() => navigate(`/dmv/license/${d.driver_license_number}`)}
+                                >
+                                  {d.driver_license_number}
+                                </button>
+                              </td>
+                              <td>{d.driver_full_name}</td>
+                              <td className="points-cell">{d.total_points}</td>
+                              <td className="to-threshold">+{d.points_to_threshold} to ISA</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="no-warnings">No drivers in warning band</p>
+                  )}
+                </div>
+
+                {/* Warning Plates (12-15 tickets) */}
+                <div className="isa-warning-card">
+                  <div className="warning-card-header plates">
+                    <span className="warning-icon">🚗</span>
+                    <span className="warning-label">Plates 12-15 Tickets</span>
+                    <span className="warning-count">{warningPlates?.count || 0}</span>
+                  </div>
+                  {warningPlates?.data?.length > 0 ? (
+                    <div className="warning-table-wrapper">
+                      <table className="warning-table">
+                        <thead>
+                          <tr>
+                            <th>Plate</th>
+                            <th>State</th>
+                            <th>Tickets</th>
+                            <th>To Threshold</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {warningPlates.data.slice(0, 10).map((p, i) => (
+                            <tr key={i}>
+                              <td><span className="plate-badge">{p.plate_id}</span></td>
+                              <td>{p.plate_state}</td>
+                              <td className="tickets-cell">{p.ticket_count}</td>
+                              <td className="to-threshold">+{p.tickets_to_threshold} to ISA</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="no-warnings">No plates in warning band</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : (
         /* COURT ADAPTER TAB */
         <div className="court-adapter-content">
@@ -623,6 +1005,19 @@ function DMVDashboard() {
             </svg>
           </div>
           <span className="nav-label">Dashboard</span>
+        </button>
+        
+        <button 
+          className={`footer-nav-btn ${activeTab === 'isa-list' ? 'active' : ''}`}
+          onClick={() => setActiveTab('isa-list')}
+        >
+          <div className="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke={activeTab === 'isa-list' ? "#fff" : "#888"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 11l3 3L22 4" strokeWidth="2"/>
+              <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" fill="none"/>
+            </svg>
+          </div>
+          <span className="nav-label">ISA List</span>
         </button>
         
         <button 

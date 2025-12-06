@@ -22,6 +22,15 @@ from isa_policy import (
     get_jurisdiction_type,
     ENFORCEMENT_STATES,
 )
+from isa_datasets import (
+    get_drivers_11_plus_points,
+    get_drivers_flat_list,
+    get_plates_16_plus_tickets,
+    get_plates_flat_list,
+    get_isa_summary_counts,
+    get_warning_drivers,
+    get_warning_plates,
+)
 
 load_dotenv()
 
@@ -1312,5 +1321,161 @@ def get_data_sources():
             "available_filters": ["ny_state_csv", "ny_state_generated", "police_stop", "camera"]
         })
         
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# =============================================================================
+# ISA THRESHOLD DATASETS (Hackathon Deliverables A & B)
+# =============================================================================
+
+@dmv_bp.route('/isa/summary')
+def api_isa_summary():
+    """
+    Get summary counts for ISA thresholds.
+    Returns total drivers with 11+ points (24m) and plates with 16+ tickets (12m).
+    """
+    try:
+        summary = get_isa_summary_counts()
+        return jsonify(summary)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@dmv_bp.route('/isa/drivers-24m')
+def api_drivers_24m():
+    """
+    DATASET A: Drivers with 11+ points in 24-month trailing window.
+    Returns grouped data with each driver's violations.
+    """
+    try:
+        flat = request.args.get('flat', 'false').lower() == 'true'
+        
+        if flat:
+            # Flat list: one row per violation
+            data = get_drivers_flat_list(time_window_months=24)
+        else:
+            # Grouped: one entry per driver with nested violations
+            data = get_drivers_11_plus_points(time_window_months=24)
+        
+        return jsonify({
+            "count": len(data) if flat else len(data),
+            "unique_drivers": len(set(d["driver_license_number"] for d in data)) if flat else len(data),
+            "time_window_months": 24,
+            "points_threshold": ISA_POLICY["isa_points_threshold"],
+            "data": data
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@dmv_bp.route('/isa/plates-12m')
+def api_plates_12m():
+    """
+    DATASET B: Plates with 16+ tickets in 12-month trailing window.
+    Returns grouped data with each plate's violations.
+    """
+    try:
+        flat = request.args.get('flat', 'false').lower() == 'true'
+        
+        if flat:
+            # Flat list: one row per violation
+            data = get_plates_flat_list(time_window_months=12)
+        else:
+            # Grouped: one entry per plate with nested violations
+            data = get_plates_16_plus_tickets(time_window_months=12)
+        
+        return jsonify({
+            "count": len(data) if flat else len(data),
+            "unique_plates": len(set(d["plate_id"] for d in data)) if flat else len(data),
+            "time_window_months": 12,
+            "ticket_threshold": ISA_POLICY["isa_ticket_threshold"],
+            "data": data
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@dmv_bp.route('/isa/send-summary', methods=['POST'])
+def send_isa_summary():
+    """
+    Email alert stub - sends ISA threshold summary to DMV and vendors.
+    In production, this would integrate with SMTP/SendGrid to send actual emails.
+    For demo, it logs the action and returns success.
+    """
+    import logging
+    
+    try:
+        payload = request.get_json() or {}
+        recipients = payload.get("recipients", ["dmv@ny.gov"])
+        drivers_count = payload.get("drivers_count", 0)
+        plates_count = payload.get("plates_count", 0)
+        
+        # Log the email action (in production, this sends real emails)
+        logging.info(
+            f"[ISA EMAIL STUB] Sending ISA summary to {recipients}. "
+            f"Drivers: {drivers_count}, Plates: {plates_count}"
+        )
+        
+        return jsonify({
+            "status": "ok",
+            "message": "ISA summary email queued for delivery",
+            "sent_to": recipients,
+            "summary": {
+                "drivers_11_plus": drivers_count,
+                "plates_16_plus": plates_count,
+                "timestamp": datetime.utcnow().isoformat()
+            },
+            "note": "In production, CSVs would be attached and sent via SMTP/SendGrid"
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@dmv_bp.route('/isa/warnings/drivers')
+def api_warning_drivers():
+    """
+    Get drivers in warning band (8-10 points) - approaching ISA threshold.
+    These drivers need proactive outreach before they hit the ISA mandate.
+    """
+    try:
+        min_pts = int(request.args.get('min', 8))
+        max_pts = int(request.args.get('max', 10))
+        
+        data = get_warning_drivers(time_window_months=24, min_points=min_pts, max_points=max_pts)
+        
+        return jsonify({
+            "count": len(data),
+            "min_points": min_pts,
+            "max_points": max_pts,
+            "threshold": ISA_POLICY["isa_points_threshold"],
+            "time_window_months": 24,
+            "data": data
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@dmv_bp.route('/isa/warnings/plates')
+def api_warning_plates():
+    """
+    Get plates in warning band (12-15 tickets) - approaching ISA threshold.
+    These vehicles need monitoring before they trigger the ISA mandate.
+    """
+    try:
+        min_tix = int(request.args.get('min', 12))
+        max_tix = int(request.args.get('max', 15))
+        
+        data = get_warning_plates(time_window_months=12, min_tickets=min_tix, max_tickets=max_tix)
+        
+        return jsonify({
+            "count": len(data),
+            "min_tickets": min_tix,
+            "max_tickets": max_tix,
+            "threshold": ISA_POLICY["isa_ticket_threshold"],
+            "time_window_months": 12,
+            "data": data
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
