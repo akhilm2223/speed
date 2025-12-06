@@ -18,6 +18,8 @@ function DMVDashboard() {
   const [showLocalCourtsPanel, setShowLocalCourtsPanel] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [sixteenPlusData, setSixteenPlusData] = useState(null);
+  const [platesData, setPlatesData] = useState(null);
   const navigate = useNavigate();
 
   // Enable page scrolling (override body overflow:hidden)
@@ -47,6 +49,8 @@ function DMVDashboard() {
     loadLocalCourts();
     loadCountyStats();
     loadImpactMetrics();
+    loadSixteenPlusData();
+    loadPlatesData();
   }, []);
 
   const loadDashboard = async () => {
@@ -93,6 +97,24 @@ function DMVDashboard() {
       if (res.ok) setImpactMetrics(await res.json());
     } catch (err) {
       console.error('Error loading impact metrics:', err);
+    }
+  };
+
+  const loadSixteenPlusData = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/dmv/sixteen-plus-tickets`);
+      if (res.ok) setSixteenPlusData(await res.json());
+    } catch (err) {
+      console.error('Error loading 16+ tickets data:', err);
+    }
+  };
+
+  const loadPlatesData = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/dmv/plates-violations`);
+      if (res.ok) setPlatesData(await res.json());
+    } catch (err) {
+      console.error('Error loading plates data:', err);
     }
   };
 
@@ -232,13 +254,140 @@ function DMVDashboard() {
   return (
     <div className="dmv-dashboard">
       {/* HEADER */}
-      <header className="dmv-header centered">
-        <div className="dmv-logo">
-          <span className="logo-text">NY DMV — ISA Enforcement Command</span>
+      <header className="dmv-header">
+        <div className="header-left">
+          <div className="dmv-logo">
+            <span className="logo-text">NY DMV — ISA Enforcement Command</span>
+          </div>
+        </div>
+        <div className="header-right">
+          <div className="header-tabs">
+            <button 
+              className={`header-tab ${activeTab === 'dashboard' ? 'active' : ''}`}
+              onClick={() => setActiveTab('dashboard')}
+            >
+              Dashboard
+            </button>
+            <button 
+              className={`header-tab ${activeTab === 'sixteen-plus' ? 'active' : ''}`}
+              onClick={() => setActiveTab('sixteen-plus')}
+            >
+              16+ Tickets
+            </button>
+          </div>
+          <button className="nav-link" onClick={() => navigate('/map')}>Camera Network</button>
         </div>
       </header>
 
-      {activeTab === 'dashboard' ? (
+      {activeTab === 'sixteen-plus' ? (
+        /* 16+ TICKETS TAB - Tracks licenses with 16+ violations in trailing window */
+        <div className="sixteen-plus-content">
+          <div className="sixteen-plus-main">
+            <div className="sixteen-plus-header">
+              <h2>Licenses with 16+ Tickets (12-Month Window)</h2>
+              <p className="threshold-info">
+                Tracking driver licenses that trigger ISA requirement based on ticket count threshold
+              </p>
+              {sixteenPlusData && (
+                <div className="sixteen-plus-stats">
+                  <div className="stat-box threshold-hit">
+                    <div className="stat-value">{sixteenPlusData.threshold_count?.toLocaleString() || 0}</div>
+                    <div className="stat-label">At 16+ Tickets (ISA Required)</div>
+                  </div>
+                  <div className="stat-box">
+                    <div className="stat-value">{sixteenPlusData.total_count?.toLocaleString() || 0}</div>
+                    <div className="stat-label">Total Licenses Tracked</div>
+                  </div>
+                  <div className="stat-box">
+                    <div className="stat-value">{sixteenPlusData.time_window_months || 12} mo</div>
+                    <div className="stat-label">Trailing Window</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {sixteenPlusData && sixteenPlusData.drivers && (
+              <div className="queue-section">
+                <div className="queue-table-container">
+                  <table className="queue-table">
+                    <thead>
+                      <tr>
+                        <th>License #</th>
+                        <th>Driver Name</th>
+                        <th>Tickets</th>
+                        <th>Plates Used</th>
+                        <th>Severe</th>
+                        <th>Night %</th>
+                        <th>Last Violation</th>
+                        <th>Primary Issuer</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sixteenPlusData.drivers.length === 0 && (
+                        <tr><td colSpan="9" className="empty-queue">
+                          <div className="empty-state">
+                            <p className="empty-title">No licenses found</p>
+                          </div>
+                        </td></tr>
+                      )}
+                      {sixteenPlusData.drivers.map((driver, i) => {
+                        const hitsThreshold = driver.hits_threshold;
+                        const recency = getRecencyBadge(driver.last_violation);
+                        
+                        return (
+                          <tr key={i} className={hitsThreshold ? 'row-threshold-hit' : ''}>
+                            <td>
+                              <button 
+                                className="license-link"
+                                onClick={() => navigate(`/dmv/license/${driver.driver_license_number}`)}
+                              >
+                                {driver.driver_license_number}
+                              </button>
+                            </td>
+                            <td>{driver.driver_name || '—'}</td>
+                            <td>
+                              <div className="violations-count">
+                                <span className={`value ${hitsThreshold ? 'highlight-tickets' : ''}`}>
+                                  {driver.total_tickets}
+                                </span>
+                                {hitsThreshold && <span className="threshold-badge">ISA</span>}
+                              </div>
+                            </td>
+                            <td>
+                              <span className="plates-count">{driver.plate_count} plate{driver.plate_count !== 1 ? 's' : ''}</span>
+                            </td>
+                            <td>{driver.severe_count > 0 ? <span className="factor-tag severe">{driver.severe_count}</span> : '—'}</td>
+                            <td>{driver.is_night_heavy ? <span className="factor-tag night">{driver.night_percentage}%</span> : `${driver.night_percentage}%`}</td>
+                            <td><span className={`recency-badge ${recency.class}`}>{recency.label}</span></td>
+                            <td>
+                              <span className="agency-tag" title={driver.primary_issuer}>
+                                {driver.primary_issuer ? (driver.primary_issuer.length > 18 ? driver.primary_issuer.substring(0, 18) + '...' : driver.primary_issuer) : '—'}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`status-badge ${hitsThreshold ? 'status-isa-notice' : 'status-monitoring'}`}>
+                                {hitsThreshold ? 'ISA Required' : 'Monitoring'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {!sixteenPlusData && (
+              <div className="dmv-loading">
+                <div className="spinner"></div>
+                <p>Loading license data...</p>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : activeTab === 'dashboard' ? (
       <div className="dmv-content">
         <div className="dmv-layout-with-sidebar">
           <div className="dmv-main">
@@ -309,15 +458,12 @@ function DMVDashboard() {
                     <th>Violations / Points</th>
                     <th>Crash Risk</th>
                     <th>Risk Factors</th>
-                    <th>Last Seen</th>
-                    <th>Agency</th>
-                    <th>Ticket Issuer</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredQueue.length === 0 && (
-                    <tr><td colSpan="9" className="empty-queue">
+                    <tr><td colSpan="6" className="empty-queue">
                       <div className="empty-state">
                         <p className="empty-title">No drivers match this filter</p>
                       </div>
@@ -326,7 +472,6 @@ function DMVDashboard() {
                   {filteredQueue.map((driver, i) => {
                     const crashBadge = getCrashRiskBadge(driver.crash_risk_score);
                     const status = getStatus(driver);
-                    const recency = getRecencyBadge(driver.last_violation);
                     const isHighRisk = driver.crash_risk_score >= 50;
                     
                     return (
@@ -375,19 +520,6 @@ function DMVDashboard() {
                             {driver.is_cross_borough && <span className="factor-tag geo">{driver.borough_count} areas</span>}
                             {driver.violation_count >= 5 && <span className="factor-tag repeat">{driver.violation_count} tickets</span>}
                           </div>
-                        </td>
-                        <td>
-                          <span className={`recency-badge ${recency.class}`}>{recency.label}</span>
-                        </td>
-                        <td>
-                          <span className="agency-tag" title={driver.police_agency}>
-                            {driver.police_agency ? (driver.police_agency.length > 15 ? driver.police_agency.substring(0, 15) + '...' : driver.police_agency) : '—'}
-                          </span>
-                        </td>
-                        <td>
-                          <span className={driver.jurisdiction_type === 'NYC_DOF' ? 'court-nyc' : 'court-local'} title={driver.court_name || driver.ticket_issuer}>
-                            {driver.court_name || driver.ticket_issuer ? ((driver.court_name || driver.ticket_issuer).length > 15 ? (driver.court_name || driver.ticket_issuer).substring(0, 15) + '...' : (driver.court_name || driver.ticket_issuer)) : 'Local'}
-                          </span>
                         </td>
                         <td>
                           <span className={`status-badge ${status.class}`}>{status.label}</span>
