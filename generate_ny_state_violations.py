@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """
-Generate 100k NY traffic violations using provided coordinates.
-Uses the NY State traffic violation schema from data.ny.gov.
+Fetch NY State traffic violations from data.ny.gov API.
+Adds random coordinates (from CSV) and license plates to real violation data.
+
+Data Source: https://data.ny.gov/resource/q4hy-kbtf.json
+Dataset: NY State Traffic Tickets Issued (10M+ records)
 
 Usage:
-    python generate_ny_violations.py
+    python generate_ny_state_violations.py
 """
 import csv
 import os
 import random
 import string
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import psycopg
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,8 +25,15 @@ load_dotenv()
 # CONFIG
 # =============================================================================
 
+# NY State Open Data API (real traffic violations)
+NY_STATE_API_URL = "https://data.ny.gov/resource/q4hy-kbtf.json"
+
+# Coordinates file for adding locations
 COORDINATES_FILE = "new_york_state_coordinates.csv"
+
+# Target number of violations to fetch
 TARGET_VIOLATIONS = 100_000
+BATCH_SIZE = 50_000  # API batch size
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
@@ -32,69 +43,36 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASSWORD", "mypassword"),
 }
 
-# NY Speeding Violation Codes (from NY Vehicle & Traffic Law Section 1180)
-VIOLATION_CODES = [
-    ("1180A", "Speed in Zone - 1-10 MPH Over"),
-    ("1180B", "Speed in Zone - 11-20 MPH Over"),
-    ("1180C", "Speed in Zone - 21-30 MPH Over"),
-    ("1180D", "Speed in Zone - 31+ MPH Over"),
-    ("1180E", "Speed in School Zone"),
-    ("1180F", "Speed in Work Zone"),
-]
+# Map violation codes to our standard codes for risk scoring
+VIOLATION_CODE_MAP = {
+    "1180A": "1180A",   # 1-10 mph over
+    "1180B": "1180B",   # 11-20 mph over  
+    "1180C": "1180C",   # 21-30 mph over
+    "1180D": "1180D",   # 31+ mph over
+    "1180D12": "1180B", # Speed in Zone 11-30 -> map to 1180B
+    "1180D13": "1180D", # Speed in Zone 31+ -> map to 1180D
+    "1180E": "1180E",   # School zone
+    "1180F": "1180F",   # Work zone
+}
 
-# Weighted distribution (more minor violations)
-VIOLATION_WEIGHTS = [30, 35, 20, 10, 3, 2]  # 1180A most common, 1180D least
-
-# NY Police Agencies
-POLICE_AGENCIES = [
-    "NYS Police - Troop T",
-    "NYS Police - Troop F", 
-    "NYS Police - Troop K",
-    "NYS Police - Troop G",
-    "NYS Police - Troop B",
-    "NYS Police - Troop C",
-    "NYS Police - Troop D",
-    "NYS Police - Troop E",
-    "NYPD",
-    "Nassau County PD",
-    "Suffolk County PD",
-    "Westchester County PD",
-    "Erie County Sheriff",
-    "Monroe County Sheriff",
-    "Albany PD",
-    "Buffalo PD",
-    "Rochester PD",
-    "Syracuse PD",
-    "Yonkers PD",
-]
-
-# NY Courts
-COURTS = [
-    "Albany City Court",
-    "Buffalo City Court",
-    "Rochester City Court",
-    "Syracuse City Court",
-    "Yonkers City Court",
-    "New Rochelle City Court",
-    "Mount Vernon City Court",
-    "Schenectady City Court",
-    "Utica City Court",
-    "Troy City Court",
-    "NYC TVB - Manhattan",
-    "NYC TVB - Brooklyn",
-    "NYC TVB - Queens",
-    "NYC TVB - Bronx",
-    "NYC TVB - Staten Island",
-    "Suffolk District Court",
-    "Nassau District Court",
-    "Westchester County Court",
-]
-
-# States (mostly NY, some neighboring)
-STATES = ["NY"] * 85 + ["NJ"] * 5 + ["CT"] * 3 + ["PA"] * 3 + ["MA"] * 2 + ["VT", "NH"]
-
-# Days of week
-DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+# States mapping (full name to abbreviation)
+STATE_ABBREV = {
+    "NEW YORK": "NY",
+    "NEW JERSEY": "NJ",
+    "CONNECTICUT": "CT",
+    "PENNSYLVANIA": "PA",
+    "MASSACHUSETTS": "MA",
+    "CALIFORNIA": "CA",
+    "FLORIDA": "FL",
+    "TEXAS": "TX",
+    "VIRGINIA": "VA",
+    "MARYLAND": "MD",
+    "OHIO": "OH",
+    "ILLINOIS": "IL",
+    "GEORGIA": "GA",
+    "NORTH CAROLINA": "NC",
+    "MICHIGAN": "MI",
+}
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -108,16 +86,6 @@ def generate_plate():
         lambda: f"{''.join(random.choices(string.ascii_uppercase, k=2))}-{''.join(random.choices(string.digits, k=4))}",  # AB-1234
     ]
     return random.choice(formats)()
-
-
-def generate_violation_date():
-    """Generate a random date in 2024-2025."""
-    start = datetime(2024, 1, 1)
-    end = datetime(2025, 9, 30)
-    delta = end - start
-    random_days = random.randint(0, delta.days)
-    random_seconds = random.randint(0, 86400)
-    return start + timedelta(days=random_days, seconds=random_seconds)
 
 
 def load_coordinates():
@@ -135,43 +103,114 @@ def load_coordinates():
     return coords
 
 
+def normalize_violation_code(code):
+    """Normalize violation code to standard format."""
+    if not code:
+        return "1180B"  # Default
+    code = code.upper().strip()
+    
+    # Direct mapping
+    if code in VIOLATION_CODE_MAP:
+        return VIOLATION_CODE_MAP[code]
+    
+    # Try to extract base code (1180A, 1180B, etc.)
+    if code.startswith("1180"):
+        for base in ["1180A", "1180B", "1180C", "1180D", "1180E", "1180F"]:
+            if base in code:
+                return base
+        # Default to 1180B if just "1180" prefix
+        return "1180B"
+    
+    return "1180B"  # Default
+
+
+def normalize_state(state_name):
+    """Convert full state name to abbreviation."""
+    if not state_name:
+        return "NY"
+    state_upper = state_name.upper().strip()
+    return STATE_ABBREV.get(state_upper, "NY")
+
+
+def get_violation_description(code):
+    """Get description for violation code."""
+    descriptions = {
+        "1180A": "Speed in Zone - 1-10 MPH Over",
+        "1180B": "Speed in Zone - 11-20 MPH Over",
+        "1180C": "Speed in Zone - 21-30 MPH Over",
+        "1180D": "Speed in Zone - 31+ MPH Over",
+        "1180E": "Speed in School Zone",
+        "1180F": "Speed in Work Zone",
+    }
+    return descriptions.get(code, "Speeding Violation")
+
+
 # =============================================================================
-# MAIN
+# FETCH DATA FROM NY STATE API
 # =============================================================================
 
-def main():
-    print("=" * 60)
-    print("  NY STATE TRAFFIC VIOLATIONS GENERATOR")
-    print("=" * 60)
+def fetch_violations_from_api():
+    """Fetch speeding violations from NY State Open Data API."""
+    all_data = []
+    offset = 0
     
-    # Load coordinates
-    print(f"\nLoading coordinates from {COORDINATES_FILE}...")
-    coordinates = load_coordinates()
-    print(f"  Loaded {len(coordinates):,} coordinates")
+    print(f"\nFetching violations from NY State Open Data API...")
+    print(f"  URL: {NY_STATE_API_URL}")
+    print(f"  Target: {TARGET_VIOLATIONS:,} records\n")
     
-    if len(coordinates) < TARGET_VIOLATIONS:
-        raise SystemExit(
-            f"ERROR: Need at least {TARGET_VIOLATIONS:,} coordinates, "
-            f"found {len(coordinates):,}."
-        )
+    while len(all_data) < TARGET_VIOLATIONS:
+        # Build query - filter for speeding violations (1180*)
+        params = {
+            "$where": "violation_charged_code LIKE '1180%'",
+            "$order": "violation_year DESC, violation_month DESC",
+            "$limit": BATCH_SIZE,
+            "$offset": offset,
+        }
+        
+        batch_num = (offset // BATCH_SIZE) + 1
+        print(f"  Batch {batch_num}...", end=" ", flush=True)
+        
+        try:
+            response = requests.get(NY_STATE_API_URL, params=params, timeout=120)
+            response.raise_for_status()
+            rows = response.json()
+        except Exception as e:
+            print(f"Error: {e}")
+            break
+        
+        if not rows:
+            print("No more data.")
+            break
+        
+        all_data.extend(rows)
+        print(f"got {len(rows):,} (total: {len(all_data):,})")
+        
+        if len(rows) < BATCH_SIZE:
+            break
+        
+        offset += BATCH_SIZE
     
-    # Use each coordinate at most once by shuffling and taking the first N
-    print(
-        "  Shuffling coordinates and taking first "
-        f"{TARGET_VIOLATIONS:,} for one-to-one mapping..."
-    )
+    return all_data[:TARGET_VIOLATIONS]
+
+
+# =============================================================================
+# PROCESS AND ENRICH DATA
+# =============================================================================
+
+def process_violations(raw_data, coordinates):
+    """Process raw API data and add coordinates + license plates."""
+    print(f"\nProcessing {len(raw_data):,} violations...")
+    
+    # Shuffle coordinates for random assignment
     random.shuffle(coordinates)
-    coord_slice = coordinates[:TARGET_VIOLATIONS]
-    
-    # Generate violations
-    print(f"\nGenerating {TARGET_VIOLATIONS:,} violations...")
     
     violations = []
     plate_pool = []  # For repeat offenders
     
-    for i in range(TARGET_VIOLATIONS):
-        # Use each coordinate exactly once
-        lat, lon = coord_slice[i]
+    for i, row in enumerate(raw_data):
+        # Get coordinate (cycle through if needed)
+        coord_idx = i % len(coordinates)
+        lat, lon = coordinates[coord_idx]
         
         # Generate or reuse plate (5% repeat offender chance)
         if plate_pool and random.random() < 0.05:
@@ -182,43 +221,57 @@ def main():
             if len(plate_pool) > 1000:
                 plate_pool = plate_pool[-500:]
         
-        # Generate violation details
-        code, description = random.choices(VIOLATION_CODES, weights=VIOLATION_WEIGHTS)[0]
-        violation_date = generate_violation_date()
+        # Extract and normalize fields from API data
+        violation_code = normalize_violation_code(row.get("violation_charged_code"))
+        state_of_license = normalize_state(row.get("state_of_license"))
+        
+        # Parse year/month for issue_date
+        try:
+            year = int(row.get("violation_year", 2024))
+            month = int(row.get("violation_month", 1))
+            day = random.randint(1, 28)  # Random day since not in API
+            hour = random.randint(0, 23)
+            minute = random.randint(0, 59)
+            issue_date = datetime(year, month, day, hour, minute)
+        except (ValueError, TypeError):
+            issue_date = datetime(2024, 1, 1)
+        
+        # Parse age
+        try:
+            age = int(row.get("age_at_violation", 30))
+        except (ValueError, TypeError):
+            age = random.randint(18, 65)
         
         violation = {
             "plate_id": plate,
-            "registration_state": random.choice(STATES),
-            "violation_code": code,
-            "violation_description": description,
-            "violation_year": violation_date.year,
-            "violation_month": violation_date.month,
-            "violation_dow": DAYS_OF_WEEK[violation_date.weekday()],
-            "age_at_violation": random.randint(17, 85),
-            "gender": random.choices(["M", "F", "U"], weights=[55, 40, 5])[0],
-            "state_of_license": random.choice(STATES),
-            "police_agency": random.choice(POLICE_AGENCIES),
-            "court": random.choice(COURTS),
-            "source": random.choices(["TSLED", "TVB"], weights=[70, 30])[0],
+            "registration_state": state_of_license,
+            "violation_code": violation_code,
+            "violation_description": row.get("violation_description") or get_violation_description(violation_code),
+            "violation_year": int(row.get("violation_year", 2024)),
+            "violation_month": int(row.get("violation_month", 1)),
+            "violation_dow": row.get("violation_dow", "MONDAY"),
+            "age_at_violation": age,
+            "gender": row.get("gender", "U"),
+            "state_of_license": state_of_license,
+            "police_agency": row.get("police_agency", "NYS Police"),
+            "court": row.get("court", "NYC TVB"),
+            "source": row.get("source", "TVB"),
             "latitude": lat,
             "longitude": lon,
-            "issue_date": violation_date,
+            "issue_date": issue_date,
         }
         violations.append(violation)
         
         if (i + 1) % 10000 == 0:
-            print(f"  Generated {i + 1:,} violations...")
+            print(f"  Processed {i + 1:,} violations...")
     
-    print(f"  Generated {len(violations):,} violations")
-    
-    # Save to database
-    print("\nSaving to database...")
-    save_to_database(violations)
-    
-    print("\n" + "=" * 60)
-    print("  DONE!")
-    print("=" * 60)
+    print(f"  Processed {len(violations):,} violations")
+    return violations
 
+
+# =============================================================================
+# SAVE TO DATABASE
+# =============================================================================
 
 def save_to_database(violations):
     """Save violations to PostgreSQL database (APPENDS to existing data)."""
@@ -329,7 +382,7 @@ def save_to_database(violations):
                     latitude, longitude, issue_date, violation_location
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
-                v["plate_id"], v["registration_state"], "ny_state_generated", v["violation_code"],
+                v["plate_id"], v["registration_state"], "ny_state_api", v["violation_code"],
                 v["violation_description"], v["violation_year"], v["violation_month"], v["violation_dow"],
                 v["age_at_violation"], v["gender"], v["state_of_license"], v["police_agency"], 
                 v["court"], v["source"], v["latitude"], v["longitude"], v["issue_date"], location
@@ -357,6 +410,65 @@ def save_to_database(violations):
     print(f"  Total violations in database: {total_count:,}")
 
 
+# =============================================================================
+# MAIN
+# =============================================================================
+
+def main():
+    import time
+    
+    print("=" * 70)
+    print("  NY STATE TRAFFIC VIOLATIONS - REAL DATA FROM data.ny.gov")
+    print("=" * 70)
+    
+    start_time = time.time()
+    
+    # Load coordinates
+    print(f"\nLoading coordinates from {COORDINATES_FILE}...")
+    coordinates = load_coordinates()
+    print(f"  Loaded {len(coordinates):,} coordinates")
+    
+    if len(coordinates) < 1000:
+        raise SystemExit(
+            f"ERROR: Need at least 1,000 coordinates, found {len(coordinates):,}."
+        )
+    
+    # Fetch real data from NY State API
+    raw_data = fetch_violations_from_api()
+    
+    if not raw_data:
+        print("No data fetched from API.")
+        return
+    
+    fetch_time = time.time() - start_time
+    print(f"\nFetched {len(raw_data):,} violations in {fetch_time:.1f}s")
+    
+    # Process and enrich with coordinates + plates
+    process_start = time.time()
+    violations = process_violations(raw_data, coordinates)
+    process_time = time.time() - process_start
+    
+    # Save to database
+    print("\nSaving to database...")
+    db_start = time.time()
+    save_to_database(violations)
+    db_time = time.time() - db_start
+    
+    total_time = time.time() - start_time
+    
+    print("\n" + "=" * 70)
+    print(f"  DONE in {total_time:.1f}s!")
+    print(f"  (Fetch: {fetch_time:.1f}s, Process: {process_time:.1f}s, DB: {db_time:.1f}s)")
+    print("=" * 70)
+    
+    # Print data source summary
+    print("\n📊 Data Summary:")
+    print(f"  - Source: NY State Open Data (data.ny.gov)")
+    print(f"  - Dataset: Traffic Tickets Issued (q4hy-kbtf)")
+    print(f"  - Real fields: violation_code, description, year, month, day_of_week,")
+    print(f"                 age, gender, state_of_license, police_agency, court, source")
+    print(f"  - Synthetic fields: license_plate (random NY format), coordinates (from CSV)")
+
+
 if __name__ == "__main__":
     main()
-
