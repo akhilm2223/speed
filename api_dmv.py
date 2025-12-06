@@ -1479,3 +1479,35 @@ def api_warning_plates():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# =============================================================================
+# STUB ENDPOINTS (for backward compatibility)
+# =============================================================================
+
+@dmv_bp.route('/sixteen-plus-tickets')
+def api_sixteen_plus_tickets():
+    """Stub endpoint for sixteen-plus-tickets - redirects to ISA data."""
+    try:
+        data = get_plates_16_plus_tickets(time_window_months=12)
+        return jsonify({
+            "threshold_count": len(data),
+            "total_count": len(data),
+            "time_window_months": 12,
+            "drivers": []  # Legacy format
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@dmv_bp.route('/plates-violations')
+def api_plates_violations():
+    """Stub endpoint for plates-violations."""
+    try:
+        data = get_plates_16_plus_tickets(time_window_months=12)
+        return jsonify({
+            "count": len(data),
+            "data": data
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
