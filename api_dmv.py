@@ -115,8 +115,52 @@ def get_dashboard():
         ensure_view_exists()
         conn = get_db()
         cur = conn.cursor()
-        
-        # Get top 5000 drivers from enhanced risk view (ALL data)
+
+        # ------------------------------------------------------------------
+        # KPIs FROM ALL DATA (full dmv_risk_view, not just top 5000)
+        # ------------------------------------------------------------------
+        cur.execute(
+            """
+            SELECT
+                -- ISA required: 11+ points OR 16+ tickets
+                COUNT(*) FILTER (
+                    WHERE risk_points >= %s OR violation_count >= %s
+                ) AS isa_required,
+                
+                -- Monitoring: 6–10 points (below ISA threshold)
+                COUNT(*) FILTER (
+                    WHERE risk_points >= %s AND risk_points < %s
+                ) AS monitoring,
+                
+                -- Super speeders: 3+ violations
+                COUNT(*) FILTER (
+                    WHERE violation_count >= 3
+                ) AS super_speeders,
+                
+                -- Cross‑borough high‑risk: 2+ boroughs AND risk >= monitor threshold
+                COUNT(*) FILTER (
+                    WHERE borough_count >= 2 AND risk_points >= %s
+                ) AS cross_borough
+            FROM dmv_risk_view
+            """,
+            (
+                POINTS_THRESHOLD,
+                TICKETS_THRESHOLD,
+                MONITOR_THRESHOLD,
+                POINTS_THRESHOLD,
+                MONITOR_THRESHOLD,
+            ),
+        )
+        kpi_row = cur.fetchone()
+        kpi_isa_required = kpi_row[0] or 0
+        kpi_monitoring = kpi_row[1] or 0
+        kpi_super_speeders = kpi_row[2] or 0
+        kpi_cross_borough = kpi_row[3] or 0
+
+        # ------------------------------------------------------------------
+        # ENFORCEMENT QUEUE: TOP 5000 DRIVERS BY RISK (subset)
+        # ------------------------------------------------------------------
+        # Get top 5000 drivers from enhanced risk view
         cur.execute("""
             SELECT 
                 plate_id, registration_state, violation_count, risk_points,
@@ -197,13 +241,6 @@ def get_dashboard():
                     driver['action_state'] = 'COMPLIANT'
                     driver['status'] = 'COMPLIANT'
         
-        # KPIs
-        isa_required = len([d for d in all_drivers if d['status'] == 'ISA_REQUIRED'])
-        monitoring = len([d for d in all_drivers if d['status'] == 'MONITORING'])
-        # "Super Speeders" = drivers with 3+ violations (high risk pattern)
-        super_speeders = len([d for d in all_drivers if d['violation_count'] >= 3])
-        cross_borough_count = len([d for d in all_drivers if d['is_cross_borough'] and d['risk_points'] >= MONITOR_THRESHOLD])
-        
         # Latest violation
         cur.execute("SELECT MAX(issue_date) FROM violations")
         latest = cur.fetchone()[0]
@@ -219,7 +256,7 @@ def get_dashboard():
         highest_corridor = row[0] if row else "N/A"
         corridor_count = row[1] if row else 0
         
-        # Enforcement queue (risk >= 5)
+        # Enforcement queue (risk >= MONITOR_THRESHOLD)
         queue = [d for d in all_drivers if d['risk_points'] >= MONITOR_THRESHOLD]
         
         cur.close()
@@ -227,10 +264,10 @@ def get_dashboard():
         
         return jsonify({
             "kpis": {
-                "isa_required": isa_required,
-                "monitoring": monitoring,
-                "super_speeders": super_speeders,
-                "cross_borough_violators": cross_borough_count,
+                "isa_required": kpi_isa_required,
+                "monitoring": kpi_monitoring,
+                "super_speeders": kpi_super_speeders,
+                "cross_borough_violators": kpi_cross_borough,
                 "latest_violation": latest.isoformat() if latest else None,
                 "highest_corridor": highest_corridor,
                 "corridor_violations": corridor_count,

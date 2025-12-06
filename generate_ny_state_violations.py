@@ -150,7 +150,18 @@ def main():
     print(f"  Loaded {len(coordinates):,} coordinates")
     
     if len(coordinates) < TARGET_VIOLATIONS:
-        print(f"  Warning: Only {len(coordinates)} coordinates, will reuse some")
+        raise SystemExit(
+            f"ERROR: Need at least {TARGET_VIOLATIONS:,} coordinates, "
+            f"found {len(coordinates):,}."
+        )
+    
+    # Use each coordinate at most once by shuffling and taking the first N
+    print(
+        "  Shuffling coordinates and taking first "
+        f"{TARGET_VIOLATIONS:,} for one-to-one mapping..."
+    )
+    random.shuffle(coordinates)
+    coord_slice = coordinates[:TARGET_VIOLATIONS]
     
     # Generate violations
     print(f"\nGenerating {TARGET_VIOLATIONS:,} violations...")
@@ -159,8 +170,8 @@ def main():
     plate_pool = []  # For repeat offenders
     
     for i in range(TARGET_VIOLATIONS):
-        # Get random coordinate
-        lat, lon = random.choice(coordinates)
+        # Use each coordinate exactly once
+        lat, lon = coord_slice[i]
         
         # Generate or reuse plate (5% repeat offender chance)
         if plate_pool and random.random() < 0.05:
