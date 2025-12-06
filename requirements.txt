@@ -1,0 +1,9 @@
+requests
+psycopg[binary]
+flask
+flask-cors
+python-dotenv
+opencv-python
+ultralytics
+numpy
+
