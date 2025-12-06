@@ -10,7 +10,6 @@ Then access API at: http://localhost:5001
 """
 import os
 import re
-from datetime import datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg
@@ -33,8 +32,11 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASSWORD", "mypassword"),
 }
 
-MONITOR_THRESHOLD = 5
-ISA_REQUIRED_THRESHOLD = 10
+# Real DMV thresholds for ISA device requirement
+# Two triggers: 11+ points on license OR 16+ speeding tickets
+POINTS_THRESHOLD = 11        # 11+ points = ISA required
+TICKETS_THRESHOLD = 16       # 16+ speeding tickets = ISA required
+MONITOR_THRESHOLD = 6        # Start monitoring at 6 points
 
 
 def get_db():
@@ -95,11 +97,14 @@ def get_heatmap():
         conn = get_db()
         cur = conn.cursor()
 
+        # Support both lat/lon columns and violation_location string
         cur.execute("""
-            SELECT violation_location, violation_code, violation_description, 
-                   issue_date, plate_id, registration_state
+            SELECT latitude, longitude, violation_location, violation_code, violation_description, 
+                   issue_date, plate_id, registration_state, police_agency, court
             FROM violations
-            WHERE violation_location IS NOT NULL LIMIT %s
+            WHERE (latitude IS NOT NULL AND longitude IS NOT NULL) 
+               OR violation_location IS NOT NULL 
+            LIMIT %s
         """, (limit,))
 
         def get_severity_from_code(code):
@@ -126,34 +131,41 @@ def get_heatmap():
 
         points = []
         for row in cur:
-            location = row[0]
-            violation_code = row[1]
-            violation_description = row[2]
-            issue_date = row[3]
-            plate_id = row[4]
-            registration_state = row[5]
-            if not location:
-                continue
-            match = re.search(r'\(\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\s*\)', location)
-            if match:
+            lat_col, lon_col, location, violation_code, violation_description, issue_date, plate_id, registration_state, police_agency, court = row
+            
+            lat, lon = None, None
+            
+            # Try direct lat/lon columns first
+            if lat_col is not None and lon_col is not None:
                 try:
-                    lat, lon = float(match.group(1)), float(match.group(2))
-                    if lat != 0 and lon != 0:
-                        severity = get_severity_from_code(violation_code)
-                        # Return as object with all details
-                        points.append({
-                            'lat': lat,
-                            'lon': lon,
-                            'severity': severity,
-                            'code': violation_code,
-                            'description': violation_description,
-                            'date': issue_date.isoformat() if issue_date else None,
-                            'plate': plate_id,
-                            'state': registration_state,
-                            'location': location
-                        })
-                except ValueError:
-                    continue
+                    lat, lon = float(lat_col), float(lon_col)
+                except (ValueError, TypeError):
+                    lat, lon = None, None
+            
+            # Fall back to parsing violation_location string
+            if (lat is None or lon is None) and location:
+                match = re.search(r'\(\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\s*\)', location)
+                if match:
+                    try:
+                        lat, lon = float(match.group(1)), float(match.group(2))
+                    except ValueError:
+                        continue
+            
+            if lat is not None and lon is not None and lat != 0 and lon != 0:
+                severity = get_severity_from_code(violation_code)
+                points.append({
+                    'lat': lat,
+                    'lon': lon,
+                    'severity': severity,
+                    'code': violation_code,
+                    'description': violation_description,
+                    'date': issue_date.isoformat() if issue_date else None,
+                    'plate': plate_id,
+                    'state': registration_state,
+                    'location': location or f"({lat}, {lon})",
+                    'agency': police_agency,
+                    'court': court
+                })
 
         cur.close()
         conn.close()
@@ -419,16 +431,27 @@ def run_detection(camera_id):
         new_status = isa_status
         alert_created = None
         
-        # Check thresholds and update status
-        if risk_pts >= ISA_REQUIRED_THRESHOLD and isa_status not in ('ISA_REQUIRED', 'COMPLIANT'):
+        # Check thresholds: ISA required if 11+ points OR 16+ tickets
+        isa_required = (risk_pts >= POINTS_THRESHOLD) or (total_v >= TICKETS_THRESHOLD)
+        
+        if isa_required and isa_status not in ('ISA_REQUIRED', 'COMPLIANT'):
             new_status = 'ISA_REQUIRED'
             cur.execute("""
                 UPDATE drivers SET isa_status = 'ISA_REQUIRED'
                 WHERE plate_id = %s
             """, (plate_id,))
+            
+            # Determine trigger reason
+            if risk_pts >= POINTS_THRESHOLD and total_v >= TICKETS_THRESHOLD:
+                reason = f"{risk_pts} points AND {total_v} tickets"
+            elif risk_pts >= POINTS_THRESHOLD:
+                reason = f"{risk_pts} points (threshold: {POINTS_THRESHOLD})"
+            else:
+                reason = f"{total_v} tickets (threshold: {TICKETS_THRESHOLD})"
+            
             alert_created = {
                 "type": "ISA_REQUIRED",
-                "message": f"Driver {plate_id} crossed ISA threshold ({risk_pts} points)"
+                "message": f"Driver {plate_id} requires ISA device: {reason}"
             }
         elif risk_pts >= MONITOR_THRESHOLD and isa_status == 'NONE':
             new_status = 'MONITOR'

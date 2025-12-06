@@ -49,7 +49,7 @@ DB_CONFIG = {
 
 # Output paths
 PROJECT_ROOT = Path(__file__).parent
-SCHEMA_PATH = PROJECT_ROOT / "sql" / "schema.sql"
+SCHEMA_PATH = PROJECT_ROOT / "schema.sql"
 
 
 # =============================================================================

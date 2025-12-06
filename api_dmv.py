@@ -5,7 +5,6 @@ Enhanced with severity, recency, time-of-day, and geography signals.
 All data from real NYC Open Data violations.
 """
 import os
-from datetime import datetime
 from flask import Blueprint, jsonify, request
 import psycopg
 from dotenv import load_dotenv
@@ -22,9 +21,11 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASSWORD", "mypassword"),
 }
 
-MONITOR_THRESHOLD = 5
-ISA_REQUIRED_THRESHOLD = 10
-POINTS_PER_VIOLATION = 3
+# DMV thresholds for ISA device requirement
+# Two triggers: 11+ points on license OR 16+ speeding tickets
+POINTS_THRESHOLD = 11        # 11+ points = ISA required
+TICKETS_THRESHOLD = 16       # 16+ speeding tickets = ISA required
+MONITOR_THRESHOLD = 6        # Start monitoring at 6 points
 
 
 def get_db():
@@ -32,16 +33,25 @@ def get_db():
 
 
 def ensure_view_exists():
-    """Create the enhanced risk view using ALL data (Jan-Sep 2025)."""
+    """Create the enhanced risk view using ALL data."""
     conn = get_db()
     cur = conn.cursor()
+    
+    # Drop and recreate to avoid column order issues
+    cur.execute("DROP VIEW IF EXISTS dmv_risk_view CASCADE")
     cur.execute("""
-        CREATE OR REPLACE VIEW dmv_risk_view AS
+        CREATE VIEW dmv_risk_view AS
         SELECT 
             v.plate_id,
             v.registration_state,
             COUNT(*) AS violation_count,
-            COUNT(*) * 3 AS risk_points,
+            SUM(CASE 
+                WHEN v.violation_code = '1180D' THEN 8
+                WHEN v.violation_code = '1180C' THEN 5
+                WHEN v.violation_code = '1180B' THEN 3
+                WHEN v.violation_code IN ('1180E', '1180F') THEN 6
+                ELSE 2
+            END) AS risk_points,
             MAX(issue_date) AS last_violation,
             MIN(issue_date) AS first_violation,
             COUNT(*) FILTER (WHERE violation_code = '1180D') AS high_tier_count,
@@ -50,22 +60,46 @@ def ensure_view_exists():
                 WHERE EXTRACT(HOUR FROM issue_date) >= 22 
                    OR EXTRACT(HOUR FROM issue_date) < 4
             ) AS night_violations,
-            SPLIT_PART(MAX(v.violation_location), ',', 1) AS primary_borough,
-            COUNT(DISTINCT SPLIT_PART(v.violation_location, ',', 1)) AS borough_count
+            COALESCE(SPLIT_PART(MAX(v.violation_location), ',', 1), 'Unknown') AS primary_borough,
+            COUNT(DISTINCT SPLIT_PART(v.violation_location, ',', 1)) AS borough_count,
+            MAX(v.court) AS primary_court
         FROM violations v
         WHERE 
-            v.registration_state = 'NY'
-            AND v.plate_id NOT LIKE 'UNK%%'
+            v.plate_id NOT LIKE 'UNK%%'
             AND v.plate_id != 'NA'
             AND LENGTH(v.plate_id) >= 4
         GROUP BY 
             v.plate_id, v.registration_state
         HAVING 
-            COUNT(*) >= 2
+            COUNT(*) >= 1
     """)
     conn.commit()
     cur.close()
     conn.close()
+
+
+# NYC boroughs for determining ticket issuer
+NYC_BOROUGHS = ['MANHATTAN', 'BROOKLYN', 'QUEENS', 'BRONX', 'STATEN ISLAND', 
+                'NEW YORK', 'KINGS', 'RICHMOND', 'NYC']
+
+
+def get_ticket_issuer(primary_borough, court):
+    """Determine ticket issuer based on location.
+    NYC = Department of Finance, Outside NYC = Local Court"""
+    if primary_borough:
+        borough_upper = primary_borough.upper().strip()
+        # Check if it's an NYC borough
+        for nyc in NYC_BOROUGHS:
+            if nyc in borough_upper or borough_upper in nyc:
+                return "NYC Dept of Finance"
+        # Check if court name contains NYC TVB
+        if court and 'TVB' in court.upper():
+            return "NYC Dept of Finance"
+    
+    # Outside NYC - return the court name or default
+    if court:
+        return court
+    return "Local Court"
 
 
 try:
@@ -82,27 +116,42 @@ def get_dashboard():
         conn = get_db()
         cur = conn.cursor()
         
-        # Get top 200 drivers from enhanced risk view (ALL data Jan-Sep 2025)
+        # Get top 5000 drivers from enhanced risk view (ALL data)
         cur.execute("""
             SELECT 
                 plate_id, registration_state, violation_count, risk_points,
                 last_violation, high_tier_count, low_tier_count,
-                night_violations, primary_borough, borough_count
+                night_violations, primary_borough, borough_count, primary_court
             FROM dmv_risk_view
             ORDER BY risk_points DESC
-            LIMIT 200
+            LIMIT 5000
         """)
         
         all_drivers = []
         for row in cur:
             # Columns: 0:plate_id, 1:state, 2:violation_count, 3:risk_points, 4:last_violation,
-            #          5:high_tier_count, 6:low_tier_count, 7:night_violations, 8:primary_borough, 9:borough_count
+            #          5:high_tier_count, 6:low_tier_count, 7:night_violations, 8:primary_borough, 9:borough_count, 10:primary_court
             risk = row[3]
             violation_count = row[2]
             night_violations = row[7]
             borough_count = row[9]
+            primary_borough = row[8]
+            primary_court = row[10]
             
-            if risk >= ISA_REQUIRED_THRESHOLD:
+            # ISA required if: 11+ points OR 16+ speeding tickets
+            isa_required = (risk >= POINTS_THRESHOLD) or (violation_count >= TICKETS_THRESHOLD)
+            
+            # Determine trigger reason
+            trigger_reason = None
+            if isa_required:
+                if risk >= POINTS_THRESHOLD and violation_count >= TICKETS_THRESHOLD:
+                    trigger_reason = f"{risk} points AND {violation_count} tickets"
+                elif risk >= POINTS_THRESHOLD:
+                    trigger_reason = f"{risk} points (threshold: {POINTS_THRESHOLD})"
+                else:
+                    trigger_reason = f"{violation_count} tickets (threshold: {TICKETS_THRESHOLD})"
+            
+            if isa_required:
                 status = 'ISA_REQUIRED'
                 action_state = 'READY_FOR_ALERT'
             elif risk >= MONITOR_THRESHOLD:
@@ -124,12 +173,15 @@ def get_dashboard():
                 "high_tier_count": row[5],
                 "low_tier_count": row[6],
                 "night_violations": night_violations,
-                "primary_borough": row[8],
+                "primary_borough": primary_borough,
                 "borough_count": borough_count,
+                "primary_court": primary_court,
+                "ticket_issuer": get_ticket_issuer(primary_borough, primary_court),
                 "status": status,
                 "action_state": action_state,
                 "is_cross_borough": is_cross_borough,
                 "is_night_heavy": is_night_heavy,
+                "trigger_reason": trigger_reason,
             })
         
         # Check for existing alerts
@@ -183,7 +235,7 @@ def get_dashboard():
                 "highest_corridor": highest_corridor,
                 "corridor_violations": corridor_count,
             },
-            "queue": queue[:50],
+            "queue": queue,  # Return all drivers in queue (up to LIMIT from query)
         })
         
     except Exception as e:
@@ -218,7 +270,20 @@ def get_driver(plate_id):
         night_violations = driver_row[8]
         borough_count = driver_row[10]
         
-        if risk >= ISA_REQUIRED_THRESHOLD:
+        # ISA required if: 11+ points OR 16+ speeding tickets
+        isa_required = (risk >= POINTS_THRESHOLD) or (violation_count >= TICKETS_THRESHOLD)
+        
+        # Determine trigger reason
+        trigger_reason = None
+        if isa_required:
+            if risk >= POINTS_THRESHOLD and violation_count >= TICKETS_THRESHOLD:
+                trigger_reason = f"{risk} points AND {violation_count} tickets"
+            elif risk >= POINTS_THRESHOLD:
+                trigger_reason = f"{risk} points (threshold: {POINTS_THRESHOLD})"
+            else:
+                trigger_reason = f"{violation_count} tickets (threshold: {TICKETS_THRESHOLD})"
+        
+        if isa_required:
             status = 'ISA_REQUIRED'
             action_state = 'READY_FOR_ALERT'
         elif risk >= MONITOR_THRESHOLD:
@@ -237,13 +302,15 @@ def get_driver(plate_id):
             "first_violation": driver_row[5].isoformat() if driver_row[5] else None,
             "high_tier_count": driver_row[6],
             "low_tier_count": driver_row[7],
-
             "night_violations": night_violations,
             "night_percentage": round((night_violations / violation_count) * 100) if violation_count > 0 else 0,
             "primary_borough": driver_row[9],
             "borough_count": borough_count,
             "is_cross_borough": borough_count >= 2,
             "status": status,
+            "trigger_reason": trigger_reason,
+            "points_threshold": POINTS_THRESHOLD,
+            "tickets_threshold": TICKETS_THRESHOLD,
         }
         
         # Get all violations

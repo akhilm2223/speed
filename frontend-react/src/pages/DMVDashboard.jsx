@@ -140,13 +140,14 @@ function DMVDashboard() {
                     <th>Risk Score</th>
                     <th>Last Violation</th>
                     <th>Borough</th>
+                    <th>Ticket Issuer</th>
                     <th>Status</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {dashboard?.queue?.length === 0 && (
-                    <tr><td colSpan="8" className="empty-queue">
+                    <tr><td colSpan="9" className="empty-queue">
                       <div className="empty-state">
                         <span className="empty-icon">📋</span>
                         <p className="empty-title">No drivers in queue</p>
@@ -182,6 +183,11 @@ function DMVDashboard() {
                         <td>
                           {driver.primary_borough}
                           {driver.is_cross_borough && <span className="cross-badge" title="Multiple boroughs">+</span>}
+                        </td>
+                        <td className="issuer-cell">
+                          <span className={driver.ticket_issuer?.includes('NYC') ? 'issuer-nyc' : 'issuer-local'}>
+                            {driver.ticket_issuer || 'Unknown'}
+                          </span>
                         </td>
                         <td>
                           <span className={`status-badge ${badge.class}`}>{badge.label}</span>

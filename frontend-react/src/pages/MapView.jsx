@@ -9,8 +9,9 @@ import CameraModal from '../components/CameraModal';
 import '../index.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5001';
-const NYC_CENTER = [40.7128, -74.0060];
-const DEFAULT_ZOOM = 11;
+// NY State center (shows entire state)
+const NY_STATE_CENTER = [42.5, -75.5];
+const DEFAULT_ZOOM = 7;
 
 // High-performance Canvas-based layer for 100k+ points
 function ViolationLayer({ points, onPointClick, onPointsDrawn }) {
@@ -64,20 +65,21 @@ function ViolationLayer({ points, onPointClick, onPointsDrawn }) {
       },
 
       _onClick: function(e) {
-        const containerPoint = L.DomUtil.getPosition(this._canvas);
-        const clickPoint = {
-          x: e.offsetX,
-          y: e.offsetY
-        };
+        // Get click position relative to map container
+        const mapContainer = this._map.getContainer();
+        const rect = mapContainer.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
         
-        const clickLatLng = this._map.containerPointToLatLng([
-          clickPoint.x + containerPoint.x,
-          clickPoint.y + containerPoint.y
-        ]);
+        // Convert to map coordinates
+        const clickContainerPoint = L.point(clickX, clickY);
+        const clickLatLng = this._map.containerPointToLatLng(clickContainerPoint);
         
-        // Find nearest point within threshold
+        // Larger click threshold - includes glow area
         const zoom = this._map.getZoom();
-        const clickThreshold = zoom >= 15 ? 8 : zoom >= 13 ? 6 : zoom >= 11 ? 4 : 3;
+        const baseSize = zoom >= 15 ? 4 : zoom >= 13 ? 3 : zoom >= 11 ? 2 : 1.5;
+        const clickThreshold = (baseSize * 2.5) + 8; // Glow radius + extra padding
+        
         let nearestPoint = null;
         let nearestPointXY = null;
         let minDistance = Infinity;
@@ -88,6 +90,7 @@ function ViolationLayer({ points, onPointClick, onPointsDrawn }) {
         const minLng = bounds.getWest();
         const maxLng = bounds.getEast();
         
+        // Check all visible points
         for (const point of pointsRef.current) {
           const lat = point.lat || point[0];
           const lon = point.lon || point[1];
@@ -97,8 +100,8 @@ function ViolationLayer({ points, onPointClick, onPointsDrawn }) {
           
           const pointXY = this._map.latLngToContainerPoint([lat, lon]);
           const distance = Math.sqrt(
-            Math.pow(pointXY.x - (clickPoint.x + containerPoint.x), 2) +
-            Math.pow(pointXY.y - (clickPoint.y + containerPoint.y), 2)
+            Math.pow(pointXY.x - clickX, 2) +
+            Math.pow(pointXY.y - clickY, 2)
           );
           
           if (distance < clickThreshold && distance < minDistance) {
@@ -145,8 +148,8 @@ function ViolationLayer({ points, onPointClick, onPointsDrawn }) {
         const zoom = this._map.getZoom();
         const bounds = this._map.getBounds();
         
-        // Adjust point size based on zoom
-        const baseSize = zoom >= 15 ? 4 : zoom >= 13 ? 3 : zoom >= 11 ? 2 : 1.5;
+        // Adjust point size based on zoom - larger dots for better visibility
+        const baseSize = zoom >= 15 ? 5 : zoom >= 13 ? 4 : zoom >= 11 ? 3 : 2;
         
         // Performance optimization: pre-calculate bounds for faster filtering
         const minLat = bounds.getSouth();
@@ -154,10 +157,7 @@ function ViolationLayer({ points, onPointClick, onPointsDrawn }) {
         const minLng = bounds.getWest();
         const maxLng = bounds.getEast();
         
-        // At low zoom levels, sample points to improve performance
-        const sampleRate = zoom < 11 ? 0.3 : zoom < 13 ? 0.6 : 1.0;
-        const shouldSample = sampleRate < 1.0;
-        
+        // Show all points (no sampling) - viewport culling handles performance
         let pointsDrawn = 0;
         let pointsChecked = 0;
 
@@ -169,10 +169,8 @@ function ViolationLayer({ points, onPointClick, onPointsDrawn }) {
           standard: { color: '#00ddff', glow: 'rgba(0, 221, 255, 0.25)' }
         };
 
-        // Draw points with optimized batching
+        // Draw all points in viewport
         for (let i = 0; i < points.length; i++) {
-          // Sampling at low zoom
-          if (shouldSample && Math.random() > sampleRate) continue;
           
           // Handle both old array format and new object format
           const point = points[i];
@@ -223,9 +221,7 @@ function ViolationLayer({ points, onPointClick, onPointsDrawn }) {
         }
         
         const renderTime = performance.now() - startTime;
-        if (renderTime > 100) {
-          console.log(`Rendered ${pointsDrawn.toLocaleString()} points (checked ${pointsChecked.toLocaleString()}) in ${renderTime.toFixed(0)}ms`);
-        }
+        console.log(`Rendered ${pointsDrawn.toLocaleString()} of ${points.length.toLocaleString()} points in ${renderTime.toFixed(0)}ms (viewport: ${pointsChecked.toLocaleString()} checked)`);
       }
     });
 
@@ -287,6 +283,7 @@ function MapView() {
 
       if (heatmapRes.ok) {
         const points = await heatmapRes.json();
+        console.log(`Loaded ${points.length.toLocaleString()} violation points from API`);
         if (Array.isArray(points)) setHeatmapPoints(points);
       }
 
@@ -315,7 +312,7 @@ function MapView() {
       <header className="map-header">
         <div className="header-left">
           <span className="logo-icon">🗺️</span>
-          <span className="logo-text">NYC Violation Map</span>
+          <span className="logo-text">NY State Violation Map</span>
         </div>
         <div className="header-right">
           <button className="nav-link primary" onClick={() => navigate('/dmv')}>
@@ -333,7 +330,7 @@ function MapView() {
           </div>
         ) : (
           <MapContainer
-            center={NYC_CENTER}
+            center={NY_STATE_CENTER}
             zoom={DEFAULT_ZOOM}
             style={{ height: '100%', width: '100%' }}
             zoomControl={true}
@@ -371,10 +368,6 @@ function MapView() {
           <div className="stat-item">
             <span className="stat-value">{heatmapPoints.length.toLocaleString()}</span>
             <span className="stat-label">Total Violations</span>
-          </div>
-          <div className="stat-item">
-            <span className="stat-value">{pointsDrawn > 0 ? pointsDrawn.toLocaleString() : '...'}</span>
-            <span className="stat-label">Visible</span>
           </div>
           <div className="stat-item">
             <span className="stat-value">{cameras.length}</span>
@@ -465,12 +458,22 @@ function MapView() {
               </div>
               {selectedViolation.plate && (
                 <div className="violation-tooltip-line">
-                  Plate: {selectedViolation.plate} ({selectedViolation.state || 'NY'})
+                  🚗 Plate: {selectedViolation.plate} ({selectedViolation.state || 'NY'})
                 </div>
               )}
               {selectedViolation.date && (
                 <div className="violation-tooltip-line">
-                  {new Date(selectedViolation.date).toLocaleDateString()} {new Date(selectedViolation.date).toLocaleTimeString()}
+                  📅 {new Date(selectedViolation.date).toLocaleDateString()} {new Date(selectedViolation.date).toLocaleTimeString()}
+                </div>
+              )}
+              {selectedViolation.agency && (
+                <div className="violation-tooltip-line">
+                  👮 {selectedViolation.agency}
+                </div>
+              )}
+              {selectedViolation.court && (
+                <div className="violation-tooltip-line">
+                  ⚖️ {selectedViolation.court}
                 </div>
               )}
             </div>

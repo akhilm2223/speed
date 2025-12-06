@@ -1,28 +1,118 @@
--- Vehicles: identified by plate + registration state
+-- Database schema for traffic_violations_db
+-- Supports BOTH:
+--   1. NYC Open Data violations (from ingest.py) - basic fields only
+--   2. NY State traffic violation data (from generate_ny_violations.py) - extended fields
+
+-- =============================================================================
+-- VEHICLES TABLE
+-- =============================================================================
 CREATE TABLE IF NOT EXISTS vehicles (
-    plate_id            VARCHAR(16) NOT NULL,  -- Common: plate_id / reg_plate_num
-    registration_state  VARCHAR(10) NOT NULL,  -- Common: registration_state / reg_state_cd (increased for longer codes)
-
-    CONSTRAINT pk_vehicle PRIMARY KEY (plate_id, registration_state)
-);
-
--- Violations: core violation event data (per plate + state)
-CREATE TABLE IF NOT EXISTS violations (
-    violation_id        BIGSERIAL PRIMARY KEY,
     plate_id            VARCHAR(16) NOT NULL,
     registration_state  VARCHAR(10) NOT NULL,
-    source_type         VARCHAR(32) NOT NULL,     -- police_stop, camera, etc.
-    violation_code      VARCHAR(64) NOT NULL,
-
-    -- NEW: Human-readable description of the speeding violation type
-    violation_description VARCHAR(128),           -- e.g., "Speeding 11-30 mph over", "School zone speeding"
-
-    issue_date          TIMESTAMPTZ,              -- When it happened
-    violation_location  VARCHAR(255),             -- Human-readable location
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    CONSTRAINT fk_violations_vehicle
-        FOREIGN KEY (plate_id, registration_state)
-        REFERENCES vehicles (plate_id, registration_state)
-        ON DELETE CASCADE
+    PRIMARY KEY (plate_id, registration_state)
 );
+
+-- =============================================================================
+-- VIOLATIONS TABLE
+-- Unified schema for both NYC and NY State data
+-- NYC data uses: plate_id, registration_state, source_type, violation_code, 
+--                violation_description, issue_date, violation_location
+-- NY State adds: violation_year/month/dow, age, gender, license state, 
+--                police_agency, court, source, lat/lon columns
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS violations (
+    violation_id          BIGSERIAL PRIMARY KEY,
+    
+    -- CORE FIELDS (required for both datasets)
+    plate_id              VARCHAR(16) NOT NULL,
+    registration_state    VARCHAR(10) NOT NULL,
+    source_type           VARCHAR(32) DEFAULT 'police_stop',  -- police_stop, camera, etc.
+    violation_code        VARCHAR(64) NOT NULL,               -- 1180A, 1180B, 1180C, 1180D, etc.
+    violation_description VARCHAR(255),                       -- "Speeding 11-20 mph over limit"
+    issue_date            TIMESTAMPTZ,                        -- When violation occurred
+    violation_location    VARCHAR(255),                       -- "(lat, lon)" or address string
+    
+    -- NY STATE EXTENDED FIELDS (nullable - only populated by generate_ny_violations.py)
+    violation_year        INTEGER,                            -- Calendar year
+    violation_month       INTEGER,                            -- 1-12
+    violation_dow         VARCHAR(16),                        -- Day of week (Monday, Tuesday, etc.)
+    age_at_violation      INTEGER,                            -- Driver's age
+    gender                VARCHAR(1),                         -- M, F, C (org), U (unknown)
+    state_of_license      VARCHAR(64),                        -- License issuing state
+    police_agency         VARCHAR(128),                       -- "NYS Police - Troop T", "NYPD", etc.
+    court                 VARCHAR(128),                       -- "NYC TVB - Manhattan", etc.
+    source                VARCHAR(16),                        -- TSLED or TVB (processing system)
+    
+    -- DIRECT COORDINATES (nullable - NYC data parses from violation_location)
+    latitude              DECIMAL(10, 8),                     -- Direct lat column (NY State data)
+    longitude             DECIMAL(11, 8),                     -- Direct lon column (NY State data)
+    
+    -- METADATA
+    created_at            TIMESTAMPTZ DEFAULT NOW(),
+    
+    FOREIGN KEY (plate_id, registration_state) 
+        REFERENCES vehicles (plate_id, registration_state) ON DELETE CASCADE
+);
+
+-- =============================================================================
+-- INDEXES
+-- =============================================================================
+CREATE INDEX IF NOT EXISTS idx_violations_plate ON violations(plate_id, registration_state);
+CREATE INDEX IF NOT EXISTS idx_violations_code ON violations(violation_code);
+CREATE INDEX IF NOT EXISTS idx_violations_date ON violations(issue_date);
+CREATE INDEX IF NOT EXISTS idx_violations_location ON violations(latitude, longitude);
+
+-- =============================================================================
+-- DMV RISK VIEW (for monitoring high-risk drivers)
+-- =============================================================================
+CREATE OR REPLACE VIEW dmv_risk_view AS
+SELECT 
+    v.plate_id,
+    v.registration_state,
+    COUNT(*) as violation_count,
+    SUM(CASE 
+        WHEN v.violation_code = '1180D' THEN 8   -- 31+ mph over
+        WHEN v.violation_code = '1180C' THEN 5   -- 21-30 mph over
+        WHEN v.violation_code = '1180B' THEN 3   -- 11-20 mph over
+        WHEN v.violation_code IN ('1180E', '1180F') THEN 6  -- School/Work zone
+        ELSE 2                                    -- 1-10 mph over
+    END) as risk_points,
+    MIN(v.issue_date) as first_violation,
+    MAX(v.issue_date) as last_violation
+FROM violations v
+GROUP BY v.plate_id, v.registration_state
+ORDER BY risk_points DESC;
+
+-- =============================================================================
+-- CAMERAS TABLE (for AI speed detection cameras)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS cameras (
+    camera_id    VARCHAR(32) PRIMARY KEY,
+    name         VARCHAR(128) NOT NULL,
+    latitude     DECIMAL(10, 8) NOT NULL,
+    longitude    DECIMAL(11, 8) NOT NULL,
+    borough      VARCHAR(64),
+    zone_type    VARCHAR(32),              -- school_zone, work_zone, highway, etc.
+    description  TEXT,
+    video_url    VARCHAR(512),
+    is_active    BOOLEAN DEFAULT true,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================================================
+-- AI DETECTIONS TABLE (violations detected by AI cameras)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS ai_detections (
+    detection_id   BIGSERIAL PRIMARY KEY,
+    camera_id      VARCHAR(32) REFERENCES cameras(camera_id),
+    plate_id       VARCHAR(16),
+    confidence     DECIMAL(5, 4),           -- 0.0000 to 1.0000
+    speed_detected INTEGER,
+    speed_limit    INTEGER,
+    image_url      VARCHAR(512),
+    detected_at    TIMESTAMPTZ DEFAULT NOW(),
+    processed      BOOLEAN DEFAULT false
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_detections_camera ON ai_detections(camera_id);
+CREATE INDEX IF NOT EXISTS idx_ai_detections_plate ON ai_detections(plate_id);

@@ -1224,6 +1224,36 @@ html, body, #root {
   font-size: 12px;
 }
 
+/* Ticket Issuer column */
+.issuer-cell {
+  max-width: 150px;
+}
+
+.issuer-nyc {
+  display: inline-block;
+  background: #E8F0FE;
+  color: #1A4A8B;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.issuer-local {
+  display: inline-block;
+  background: #F0F4E8;
+  color: #3E6D45;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Cross-borough tag in profile */
 .cross-borough-tag {
   background: #E8F0FE;
