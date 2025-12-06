@@ -320,9 +320,6 @@ def fetch_violations_from_api(target_violations, app_token=None):
     return all_data[:target_violations]
 
 
-
-
-
 # =============================================================================
 # PROCESS AND ENRICH DATA
 # =============================================================================
@@ -612,23 +609,7 @@ Examples:
   # Fetch 500k violations (default)
   python generate_ny_state_violations.py
   
-  # Fetch 1M violations for full statewide coverage
-  python generate_ny_state_violations.py --limit 1000000
-  
-  # Use SODA3 API with app token (RECOMMENDED for large datasets - higher rate limits)
-  python generate_ny_state_violations.py --app-token YOUR_TOKEN --limit 1000000
-  
-  # Get your FREE app token at: https://data.ny.gov/profile/edit/developer_settings
-  # Or set in .env file: SOCRATA_APP_TOKEN=your_token_here
 
-❗ WHY THIS DATASET IS CRITICAL:
-  - Covers ALL 62 NY counties (not just NYC)
-  - ALL police agencies (local + state)
-  - ALL 1,800+ local courts
-  - Violations up to April 2025
-  - Disposition data (case outcomes for compliance tracking)
-  
-  → Powers your Statewide DMV Pipeline and Local Courts Adapter
         """
     )
     parser.add_argument(
@@ -691,29 +672,6 @@ Examples:
     print(f"  DONE in {total_time:.1f}s!")
     print(f"  (Fetch: {fetch_time:.1f}s, Process: {process_time:.1f}s, DB: {db_time:.1f}s)")
     print("=" * 70)
-    
-    # Print data source summary
-    print("\n📊 STATEWIDE DATA SUMMARY:")
-    print(f"  - Source: NY State Open Data (data.ny.gov)")
-    print(f"  - Dataset: Traffic Tickets Issued: Four Year Window (q4hy-kbtf)")
-    print(f"  - Updated: April 2025")
-    print(f"  - Total Available: 10.7M records")
-    print(f"  - Coverage: ALL 62 NY counties, ALL police agencies, ALL 1,800+ local courts")
-    print(f"\n  ✅ Real fields extracted:")
-    print(f"    • violation_code (VTL Section), description")
-    print(f"    • violation_year, violation_month, day_of_week")
-    print(f"    • age_at_violation, gender, state_of_license")
-    print(f"    • police_agency (identify local vs state police)")
-    print(f"    • county (for COUNTY RISK CARDS)")
-    print(f"    • court (for LOCAL COURT ADAPTER)")
-    print(f"    • disposition (for COMPLIANCE TRACKING)")
-    print(f"    • source (TSLED/TVB processing system)")
-    print(f"\n  🔧 Synthetic fields added:")
-    print(f"    • license_plate (random NY format with repeat offenders)")
-    print(f"    • coordinates (from {COORDINATES_FILE})")
-    print(f"\n✅ This dataset powers your Statewide DMV Pipeline!")
-    print(f"✅ Ready for County Risk Cards and Local Courts Adapter!")
-    print(f"✅ Show judges: 'We ingest statewide tickets updated April 2025'")
 
 
 if __name__ == "__main__":
