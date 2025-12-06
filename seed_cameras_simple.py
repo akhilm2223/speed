@@ -113,9 +113,12 @@ def seed_cameras():
     
     conn.commit()
     
-    # Clear existing cameras
+    # Clear existing cameras (delete related violations first due to foreign key constraint)
+    print("\nClearing existing data...")
+    cur.execute("DELETE FROM ai_violations WHERE camera_id IN (SELECT camera_id FROM cameras)")
+    print("  ✓ Cleared related ai_violations")
     cur.execute("DELETE FROM cameras")
-    print("\nCleared existing cameras")
+    print("  ✓ Cleared existing cameras")
     
     # Insert cameras with calibration values
     for cam in CAMERAS:

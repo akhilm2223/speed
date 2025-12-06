@@ -22,8 +22,8 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASSWORD", "mypassword"),
 }
 
-# Path to snapshots folder (relative to project root)
-SNAPSHOTS_DIR = Path(__file__).parent.parent / "snapshots"
+# Path to snapshots folder (relative to this script in project root)
+SNAPSHOTS_DIR = Path(__file__).parent / "snapshots"
 
 
 def parse_snapshot_filename(filename):
@@ -115,44 +115,41 @@ def seed_existing_snapshots():
         except:
             detected_at = datetime.now()
         
-        # Insert ai_violation record
+        # Determine violation code based on speed over limit
+        speed_over = speed_detected - speed_limit
+        if speed_over >= 30:
+            violation_code = "1180D"
+            points = 11
+        elif speed_over >= 20:
+            violation_code = "1180C"
+            points = 6
+        elif speed_over >= 10:
+            violation_code = "1180B"
+            points = 4
+        else:
+            violation_code = "1180A"
+            points = 3
+        
+        # Insert ai_violation record (standalone - no violations table dependency)
         cur.execute("""
             INSERT INTO ai_violations (
                 camera_id, plate_id, violation_type, points,
                 speed_detected, speed_limit, screenshot_path,
-                detected_at, ocr_confidence
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                detected_at, ocr_confidence, latitude, longitude
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING violation_id
         """, (
             camera_id,
             plate_id,
-            "speeding",
-            3,  # Default points
+            violation_code,
+            points,
             speed_detected,
             speed_limit,
             str(snapshot_path),
             detected_at,
-            0.85 + (hash(plate_id) % 15) / 100  # Random confidence 0.85-0.99
-        ))
-        
-        violation_id = cur.fetchone()[0]
-        
-        # Also insert into main violations table for full integration
-        cur.execute("""
-            INSERT INTO violations (
-                plate_id, plate_state, violation_code,
-                date_of_violation, fine_amount, latitude, longitude,
-                police_agency
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            plate_id,
-            "NY",
-            "1180A",  # Speeding violation code
-            detected_at.date(),
-            150 + (speed_detected - speed_limit) * 10,  # Fine based on speed over
+            0.85 + (hash(plate_id) % 15) / 100,  # Random confidence 0.85-0.99
             camera["lat"],
-            camera["lng"],
-            "AI Camera System"
+            camera["lng"]
         ))
         
         print(f"  ✓ Seeded: {snapshot_path.name} → {speed_detected} MPH (limit {speed_limit})")

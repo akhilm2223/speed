@@ -9,7 +9,7 @@ body {
     'Ubuntu', 'Cantarell', sans-serif;
   background: #1a1a2e;
   color: #fff;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .app-container {

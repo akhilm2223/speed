@@ -67,8 +67,7 @@ function CourtsUpload() {
       <header className="dmv-header">
         <div className="header-left">
           <div className="dmv-logo">
-            <span className="logo-icon">📤</span>
-            <span className="logo-text">Local Court CSV Upload</span>
+            <span className="logo-text">NY DMV — Local Court CSV Upload</span>
           </div>
         </div>
         <div className="header-right">
@@ -121,7 +120,7 @@ function CourtsUpload() {
               className="file-input"
             />
             <label htmlFor="csv-upload" className="file-label">
-              {file ? `📄 ${file.name}` : '📁 Choose CSV File'}
+              {file ? file.name : 'Choose CSV File'}
             </label>
           </div>
 
@@ -157,7 +156,7 @@ function CourtsUpload() {
               onClick={handleUpload}
               disabled={uploading}
             >
-              {uploading ? 'Uploading...' : '🚀 Upload to DMV System'}
+              {uploading ? 'Uploading...' : 'Upload to DMV System'}
             </button>
           )}
 
@@ -165,22 +164,22 @@ function CourtsUpload() {
             <div className={`upload-result ${result.error ? 'error' : 'success'}`}>
               {result.error ? (
                 <>
-                  <p>❌ <strong>Error:</strong> {result.error}</p>
+                  <p><strong>Error:</strong> {result.error}</p>
                   {result.first_error && (
                     <p className="error-detail">Details: {result.first_error}</p>
                   )}
                 </>
               ) : (
                 <>
-                  <p>✅ <strong>{result.message || 'Upload successful!'}</strong></p>
+                  <p><strong>{result.message || 'Upload successful!'}</strong></p>
                   {result.inserted !== undefined && (
                     <div className="upload-stats">
-                      <p>📊 Records inserted: <strong>{result.inserted}</strong></p>
+                      <p>Records inserted: <strong>{result.inserted}</strong></p>
                       {result.errors > 0 && (
-                        <p>⚠️ Errors: <strong>{result.errors}</strong></p>
+                        <p>Errors: <strong>{result.errors}</strong></p>
                       )}
                       {result.filename && (
-                        <p>📄 File: {result.filename}</p>
+                        <p>File: {result.filename}</p>
                       )}
                     </div>
                   )}
@@ -191,7 +190,7 @@ function CourtsUpload() {
         </div>
 
         <div className="upload-info-card">
-          <h3>📋 Integration Guide</h3>
+          <h3>Integration Guide</h3>
           <div className="info-section">
             <h4>For Local Courts:</h4>
             <ul>

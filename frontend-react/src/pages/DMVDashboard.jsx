@@ -140,15 +140,15 @@ function DMVDashboard() {
     return { label: 'LOW', class: 'crash-low' };
   };
 
-  // ENFORCEMENT STAGE
-  const getEnforcementButton = (driver) => {
-    const status = driver.enforcement_status;
-    if (status === 'COMPLIANT') return { label: 'Compliant', class: 'stage-compliant', disabled: true };
-    if (status === 'ESCALATED') return { label: 'Escalated', class: 'stage-escalated', disabled: true };
-    if (status === 'FOLLOW_UP_DUE') return { label: 'Follow-Up', class: 'stage-followup', disabled: false };
-    if (status === 'NOTICE_SENT') return { label: 'Sent', class: 'stage-sent', disabled: true };
-    if (driver.status === 'ISA_REQUIRED') return { label: 'New', class: 'stage-new', disabled: false };
-    return { label: 'Monitor', class: 'stage-monitor', disabled: true };
+  // STATUS - Based on ISA threshold: ≥11 pts OR ≥16 tickets
+  const getStatus = (driver) => {
+    const points = driver.total_points || driver.risk_points || 0;
+    const tickets = driver.violation_count || 0;
+    
+    if (points >= 11 || tickets >= 16) {
+      return { label: 'Notice Sent', class: 'status-notice-sent' };
+    }
+    return { label: 'Monitoring', class: 'status-monitoring' };
   };
 
   // RECENCY INDICATOR - Shows actual date for historical data
@@ -166,9 +166,24 @@ function DMVDashboard() {
     
     switch (activeFilter) {
       case 'high_risk': filtered = filtered.filter(d => d.crash_risk_score >= 50); break;
-      case 'pending_followup': filtered = filtered.filter(d => d.enforcement_status === 'FOLLOW_UP_DUE'); break;
+      case 'notice_sent': 
+        filtered = filtered.filter(d => {
+          const points = d.total_points || d.risk_points || 0;
+          const tickets = d.violation_count || 0;
+          // Show drivers who meet ISA threshold (should have notice sent) OR have NOTICE_SENT status
+          return (points >= 11 || tickets >= 16) || d.enforcement_status === 'NOTICE_SENT';
+        });
+        break;
+      case 'follow_up_sent': filtered = filtered.filter(d => d.enforcement_status === 'FOLLOW_UP_DUE'); break;
       case 'nighttime': filtered = filtered.filter(d => d.is_night_heavy); break;
       case 'isa_required': filtered = filtered.filter(d => d.status === 'ISA_REQUIRED' && d.enforcement_status === 'NEW'); break;
+      case 'monitoring': 
+        filtered = filtered.filter(d => {
+          const points = d.total_points || d.risk_points || 0;
+          const tickets = d.violation_count || 0;
+          return points < 11 && tickets < 16;
+        });
+        break;
       case 'recent': 
         // Sort by most recent violation date (not filter - show all sorted by recency)
         filtered = filtered.filter(d => d.last_violation).sort((a, b) => 
@@ -206,8 +221,10 @@ function DMVDashboard() {
       {/* POLICY BAR */}
       <div className="policy-banner">
         <div className="policy-badge">
-          <span className="policy-version">Policy {policy?.version}</span>
-          <span className="policy-rule">ISA: ≥{policy?.isa_points_threshold} pts OR ≥{policy?.isa_ticket_threshold} tickets</span>
+          <span className="policy-version">Policy {policy?.version || '0.1-draft'}</span>
+          <span className="policy-rule">ISA Required: ≥{policy?.isa_points_threshold || 11} pts OR ≥{policy?.isa_ticket_threshold || 16} tickets</span>
+          <span className="policy-rule">Monitoring: ≥{policy?.monitoring_min_points || 6} pts, {'<'} {policy?.isa_points_threshold || 11} pts, {'<'} {policy?.isa_ticket_threshold || 16} tickets</span>
+          <span className="policy-rule">Super Speeder: ≥3 violations</span>
         </div>
         {dashboard?.data_source && (
           <div className="data-source-tag">{dashboard.data_source.name}</div>
@@ -236,10 +253,9 @@ function DMVDashboard() {
 
           {/* KPI CARDS */}
           <div className="kpi-strip">
-            <div className="kpi-card kpi-critical" onClick={() => setActiveFilter('isa_required')}>
+            <div className="kpi-card kpi-critical">
               <div className="kpi-value">{dashboard?.kpis?.isa_required || 0}</div>
               <div className="kpi-label">ISA Required</div>
-              <div className="kpi-action">Click to filter →</div>
             </div>
             <div className="kpi-card" onClick={() => setActiveFilter('all')}>
               <div className="kpi-value">{dashboard?.kpis?.monitoring || 0}</div>
@@ -344,8 +360,9 @@ function DMVDashboard() {
             <span className="filter-label">Filters:</span>
             {[
               { key: 'high_risk', label: 'High Risk' },
-              { key: 'isa_required', label: 'Needs Notice' },
-              { key: 'pending_followup', label: 'Follow-Up' },
+              { key: 'monitoring', label: 'Monitoring' },
+              { key: 'notice_sent', label: 'Notice Sent' },
+              { key: 'follow_up_sent', label: 'Follow-Up Sent' },
               { key: 'nighttime', label: 'Nighttime' },
               { key: 'recent', label: 'By Date' },
               { key: 'all', label: 'All' },
@@ -388,13 +405,12 @@ function DMVDashboard() {
                     <th>Last Seen</th>
                     <th>Agency</th>
                     <th>Ticket Issuer</th>
-                    <th>Stage</th>
-                    <th>Action</th>
+                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredQueue.length === 0 && (
-                    <tr><td colSpan="10" className="empty-queue">
+                    <tr><td colSpan="9" className="empty-queue">
                       <div className="empty-state">
                         <p className="empty-title">No drivers match this filter</p>
                       </div>
@@ -402,30 +418,29 @@ function DMVDashboard() {
                   )}
                   {filteredQueue.map((driver, i) => {
                     const crashBadge = getCrashRiskBadge(driver.crash_risk_score);
-                    const stageBtn = getEnforcementButton(driver);
+                    const status = getStatus(driver);
                     const recency = getRecencyBadge(driver.last_violation);
                     const isHighRisk = driver.crash_risk_score >= 50;
-                    const canSelect = driver.status === 'ISA_REQUIRED' && driver.enforcement_status === 'NEW';
                     
                     return (
                       <tr key={i} className={isHighRisk ? 'row-critical' : ''}>
                         <td className="col-select">
-                          {canSelect && (
-                            <input type="checkbox" checked={selectedDrivers.has(driver.plate_id)} onChange={() => toggleDriverSelection(driver.plate_id)} />
-                          )}
+                          <input type="checkbox" checked={selectedDrivers.has(driver.plate_id)} onChange={() => toggleDriverSelection(driver.plate_id)} />
                         </td>
                         <td>
                           <div className="driver-info">
                             {driver.driver_license_number && (
-                              <div className="license-number">
-                                <span className="label">License:</span>
-                                <span className="value">{driver.driver_license_number}</span>
-                              </div>
+                              <button 
+                                className="license-link"
+                                onClick={() => navigate(`/dmv/license/${driver.driver_license_number}`)}
+                                title="View all violations for this license"
+                              >
+                                {driver.driver_license_number}
+                              </button>
                             )}
-                            <button className="plate-link" onClick={() => navigate(`/dmv/drivers/${driver.plate_id}`)}>
-                              Plate: {driver.plate_id}
-                            </button>
-                            <div className="driver-meta-small">{driver.state}</div>
+                            <div className="plate-display">
+                              {driver.plate_id} <span className="state-tag">{driver.state}</span>
+                            </div>
                           </div>
                         </td>
                         <td>
@@ -468,18 +483,7 @@ function DMVDashboard() {
                           </span>
                         </td>
                         <td>
-                          <span className={`stage-badge ${stageBtn.class}`}>{stageBtn.label}</span>
-                        </td>
-                        <td>
-                          {canSelect && (
-                            <button className="action-btn-send" onClick={() => handleSendNotice(driver.plate_id)} disabled={actionLoading === driver.plate_id}>
-                              {actionLoading === driver.plate_id ? '...' : 'Send'}
-                            </button>
-                          )}
-                          {driver.enforcement_status === 'FOLLOW_UP_DUE' && (
-                            <button className="action-btn-review" onClick={() => navigate(`/dmv/drivers/${driver.plate_id}`)}>Review</button>
-                          )}
-                          {stageBtn.disabled && stageBtn.label !== 'Monitor' && <span className="action-done">✓</span>}
+                          <span className={`status-badge ${status.class}`}>{status.label}</span>
                         </td>
                       </tr>
                     );

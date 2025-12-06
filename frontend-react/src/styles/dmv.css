@@ -690,25 +690,47 @@
 .driver-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
-.license-number {
+/* Clickable License Number */
+.license-link {
+  background: #1a1a1a;
+  border: 1px solid #444;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  font-family: 'SF Mono', 'Consolas', monospace;
+  letter-spacing: 1px;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  display: inline-block;
+}
+
+.license-link:hover {
+  background: #2a2a2a;
+  border-color: #777;
+  transform: translateY(-1px);
+}
+
+/* Plate Display (non-clickable) */
+.plate-display {
+  font-size: 13px;
+  color: #888;
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 8px;
 }
 
-.license-number .label {
-  color: #888;
-  font-weight: 500;
-}
-
-.license-number .value {
-  color: #fff;
+.plate-display .state-tag {
+  background: #2a2a2a;
+  color: #666;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
   font-weight: 600;
-  font-family: 'SF Mono', 'Consolas', monospace;
 }
 
 .plate-link {
@@ -732,6 +754,24 @@
   font-size: 10px;
   color: #555;
   margin-top: 2px;
+}
+
+.license-number {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.license-number .label {
+  color: #888;
+  font-weight: 500;
+}
+
+.license-number .value {
+  color: #fff;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Consolas', monospace;
 }
 
 /* Violations & Points */
@@ -972,6 +1012,29 @@
 .action-done {
   font-size: 14px;
   color: #555;
+}
+
+/* Status Badge */
+.status-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-badge.status-notice-sent {
+  background: #fff;
+  color: #000;
+  border: 1px solid #fff;
+}
+
+.status-badge.status-monitoring {
+  background: #2a2a2a;
+  color: #888;
+  border: 1px solid #333;
 }
 
 /* ============================================
@@ -1292,6 +1355,63 @@
   font-size: 15px;
   font-weight: 700;
   color: #fff;
+  text-align: right;
+}
+
+/* Violation Row Variants - Black & White Only */
+.violation-row.high-tier {
+  background: #1a1a1a;
+  border-left: 3px solid #fff;
+}
+
+.violation-row.high-tier:hover {
+  background: #222;
+}
+
+/* Tier/Severity Badges - Black & White Only */
+.tier-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 8px;
+  background: #2a2a2a;
+  color: #888;
+  border: 1px solid #333;
+}
+
+.tier-badge.severity-severe,
+.tier-badge.high {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
+}
+
+.tier-badge.severity-high {
+  background: #888;
+  color: #000;
+  border-color: #888;
+}
+
+.tier-badge.severity-moderate {
+  background: #444;
+  color: #fff;
+  border-color: #444;
+}
+
+.tier-badge.severity-standard {
+  background: #2a2a2a;
+  color: #888;
+  border-color: #333;
+}
+
+.tier-badge.night {
+  background: #333;
+  color: #fff;
+  border-color: #444;
 }
 
 /* Case Sidebar */
@@ -1593,6 +1713,132 @@
   background: #1a1a1a;
   border: 1px solid #555;
   color: #888;
+}
+
+.upload-stats {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #333;
+}
+
+.upload-stats p {
+  margin: 8px 0;
+  color: #888;
+  font-size: 13px;
+}
+
+.upload-stats strong {
+  color: #fff;
+}
+
+.error-detail {
+  margin-top: 8px;
+  padding: 8px;
+  background: #151515;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #666;
+  font-family: monospace;
+}
+
+.format-section {
+  margin-bottom: 15px;
+}
+
+.format-section h5 {
+  color: #888;
+  font-size: 11px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+
+.format-note {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #333;
+}
+
+.format-note p {
+  margin: 8px 0;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.6;
+}
+
+.format-note code {
+  background: #1a1a1a;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #888;
+  border: 1px solid #333;
+}
+
+.upload-info-card {
+  background: #1a1a1a;
+  border-radius: 12px;
+  padding: 30px;
+  border: 1px solid #2a2a2a;
+  width: 100%;
+  max-width: 800px;
+}
+
+.upload-info-card h3 {
+  color: #fff;
+  margin-bottom: 20px;
+  font-size: 16px;
+}
+
+.info-section {
+  margin-bottom: 25px;
+}
+
+.info-section h4 {
+  color: #888;
+  font-size: 13px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  letter-spacing: 0.5px;
+}
+
+.info-section ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.info-section li {
+  color: #666;
+  font-size: 13px;
+  margin-bottom: 8px;
+  padding-left: 20px;
+  position: relative;
+}
+
+.info-section li:before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: #888;
+}
+
+.info-section code {
+  background: #151515;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #888;
+  border: 1px solid #333;
+}
+
+.court-count {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 10px;
 }
 
 /* ============================================

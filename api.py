@@ -330,6 +330,108 @@ def get_driver(plate_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/license/<license_number>/violations')
+def get_violations_by_license(license_number):
+    """Get all violations for a driver license number."""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # Get all violations for this license
+        cur.execute("""
+            SELECT 
+                v.violation_id,
+                v.driver_license_number,
+                v.driver_full_name,
+                v.date_of_birth,
+                v.license_state,
+                v.plate_id,
+                v.plate_state,
+                v.violation_code,
+                v.date_of_violation,
+                v.disposition,
+                v.latitude,
+                v.longitude,
+                v.police_agency,
+                v.ticket_issuer,
+                v.source_type,
+                ai.speed_detected,
+                ai.speed_limit,
+                ai.screenshot_path,
+                ai.ocr_confidence,
+                ai.camera_id
+            FROM violations v
+            LEFT JOIN ai_violations ai ON v.violation_id = ai.violation_id
+            WHERE v.driver_license_number = %s
+            ORDER BY v.date_of_violation DESC
+        """, (license_number,))
+        
+        violations = []
+        driver_info = None
+        
+        for row in cur:
+            if not driver_info and row[1]:
+                driver_info = {
+                    "driver_license_number": row[1],
+                    "driver_full_name": row[2],
+                    "date_of_birth": row[3].isoformat() if row[3] else None,
+                    "license_state": row[4]
+                }
+            
+            screenshot_path = row[17]
+            screenshot_url = f'/snapshots/{Path(screenshot_path).name}' if screenshot_path else None
+            
+            violations.append({
+                "violation_id": row[0],
+                "plate_id": row[5],
+                "plate_state": row[6],
+                "violation_code": row[7],
+                "date_of_violation": row[8].isoformat() if row[8] else None,
+                "disposition": row[9],
+                "latitude": float(row[10]) if row[10] else None,
+                "longitude": float(row[11]) if row[11] else None,
+                "police_agency": row[12],
+                "ticket_issuer": row[13],
+                "source_type": row[14],
+                "speed_detected": float(row[15]) if row[15] else None,
+                "speed_limit": row[16],
+                "screenshot_url": screenshot_url,
+                "ocr_confidence": float(row[18]) if row[18] else None,
+                "camera_id": row[19]
+            })
+        
+        # Get driver license summary
+        cur.execute("""
+            SELECT total_speeding_tickets, points_on_license
+            FROM driver_license_summary
+            WHERE driver_license_number = %s
+        """, (license_number,))
+        
+        summary_row = cur.fetchone()
+        summary = None
+        if summary_row:
+            summary = {
+                "total_speeding_tickets": summary_row[0],
+                "points_on_license": summary_row[1]
+            }
+        
+        cur.close()
+        conn.close()
+        
+        if not violations:
+            return jsonify({"error": "No violations found for this license"}), 404
+        
+        return jsonify({
+            "success": True,
+            "driver": driver_info,
+            "summary": summary,
+            "violations": violations,
+            "total_violations": len(violations)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/alerts')
 def get_alerts():
     """Get all DMV alerts."""
@@ -793,24 +895,22 @@ def get_camera_violations(camera_id):
         conn = get_db()
         cur = conn.cursor()
         
+        # Query ai_violations directly (works with seeded snapshots)
         cur.execute("""
             SELECT 
-                v.violation_id,
-                v.plate_id,
-                v.violation_code,
-                v.date_of_violation,
+                ai.violation_id,
+                ai.plate_id,
+                ai.violation_type,
+                ai.detected_at,
                 ai.speed_detected,
                 ai.speed_limit,
                 ai.camera_id,
                 ai.screenshot_path,
-                ai.ocr_confidence,
-                v.driver_license_number,
-                v.driver_full_name
-            FROM violations v
-            JOIN ai_violations ai ON v.violation_id = ai.violation_id
+                ai.ocr_confidence
+            FROM ai_violations ai
             WHERE ai.camera_id = %s
               AND ai.screenshot_path IS NOT NULL
-            ORDER BY v.date_of_violation DESC
+            ORDER BY ai.detected_at DESC
             LIMIT 10
         """, (camera_id,))
         
@@ -829,8 +929,6 @@ def get_camera_violations(camera_id):
                 'camera_id': row[6],
                 'screenshot_url': screenshot_url,
                 'ocr_confidence': float(row[8]) if row[8] else None,
-                'driver_license_number': row[9],
-                'driver_name': row[10],
             })
         
         cur.close()

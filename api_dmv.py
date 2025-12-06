@@ -452,11 +452,6 @@ def get_dashboard():
         
         return jsonify({
             "policy": get_policy_summary(policy),
-            "data_source": {
-                "name": "NY State Statewide + NYC Open Data",
-                "coverage": f"Statewide ({len(top_risk_counties)} counties)",
-                "note": "Ingesting statewide tickets updated April 2025",
-            },
             "kpis": {
                 "isa_required": kpi_isa_required,
                 "monitoring": kpi_monitoring,

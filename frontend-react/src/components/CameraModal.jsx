@@ -198,18 +198,6 @@ function CameraModal({ camera, onClose, onDetectionComplete }) {
     setIsScanning(false);
   };
 
-  const getViolationReason = (v) => {
-    const over = (v.speed_detected - v.speed_limit).toFixed(1);
-    if (v.violation_code === '1180D') {
-      return `SEVERE: ${v.speed_detected} MPH in ${v.speed_limit} zone (+${over} over). 8 points. ISA required.`;
-    } else if (v.violation_code === '1180C') {
-      return `HIGH: ${v.speed_detected} MPH in ${v.speed_limit} zone (+${over} over). 5 points.`;
-    } else if (v.violation_code === '1180B') {
-      return `MODERATE: ${v.speed_detected} MPH in ${v.speed_limit} zone (+${over} over). 3 points.`;
-    }
-    return `SPEEDING: ${v.speed_detected} MPH in ${v.speed_limit} zone (+${over} over).`;
-  };
-
   const getSeverityBadge = (v) => {
     if (v.violation_code === '1180D') return { text: 'SEVERE', level: 'severe' };
     if (v.violation_code === '1180C') return { text: 'HIGH', level: 'high' };
