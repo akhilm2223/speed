@@ -52,8 +52,7 @@ load_dotenv()
 NY_STATE_API_URL = "https://data.ny.gov/resource/q4hy-kbtf.json"
 
 # Coordinates file for adding locations
-PROJECT_ROOT = Path(__file__).parent.parent
-COORDINATES_FILE = PROJECT_ROOT / "new_york_state_coordinates.csv"
+COORDINATES_FILE = "new_york_state_coordinates.csv"
 
 # Default target number of violations to fetch
 DEFAULT_TARGET_VIOLATIONS = 500_000  # Increased for statewide coverage
@@ -448,7 +447,7 @@ def process_violations(raw_data, coordinates):
             "longitude": lon,
             "police_agency": police_agency,
             "ticket_issuer": ticket_issuer,
-            "source_type": "police_traffic_stop",  # NY State violations are police-issued tickets
+            "source_type": "ny_state_api",
         }
         violations.append(violation)
         
@@ -509,7 +508,7 @@ def save_to_database(violations):
     if not tables_exist:
         print("  Tables don't exist - creating them from schema...")
         # Read and execute schema file
-        schema_path = PROJECT_ROOT / "sql" / "schema.sql"
+        schema_path = Path(__file__).parent / "sql" / "schema.sql"
         if schema_path.exists():
             with open(schema_path, 'r') as f:
                 schema_sql = f.read()

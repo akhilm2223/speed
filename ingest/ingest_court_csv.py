@@ -137,7 +137,7 @@ def ingest_csv(file_path, batch_size=1000):
                     get_value(row, "longitude") or None,
                     get_value(row, "police_agency", "Local Police"),
                     get_value(row, "ticket_issuer", "Local Court"),
-                    "police_traffic_stop",  # source_type - courts process police-issued tickets
+                    "local_court_upload",  # source_type
                 )
                 batch_violations.append(violation)
                 

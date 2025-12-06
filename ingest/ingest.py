@@ -41,7 +41,7 @@ DB_CONFIG = {
 }
 
 # Output paths
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent
 # Main DB schema now lives in sql/schema.sql
 SCHEMA_PATH = PROJECT_ROOT / "sql" / "schema.sql"
 
@@ -264,7 +264,7 @@ def prepare_record(row, driver_pool=None):
     # Always use "NYC Police Department" for police_agency
     police_agency = "NYC Police Department"
     ticket_issuer = "NYC Dept of Finance"  # NYC Open Data is all NYC
-    source_type = "police_traffic_stop"  # NYC Open Data violations are police-issued tickets
+    source_type = "nyc_open_data"
     
     violation = (
         driver_license_number,
