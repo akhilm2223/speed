@@ -4330,7 +4330,7 @@ body {
   align-items: center;
   padding: 15px 25px;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  border-bottom: 2px solid #ff6b35;
+  border-bottom: 2px solid #555;
 }
 
 .header-left {
@@ -4369,14 +4369,14 @@ body {
 }
 
 .tabs-nav .tab-btn:hover {
-  background: rgba(255, 107, 53, 0.1);
+  background: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.8);
 }
 
 .tabs-nav .tab-btn.active {
-  background: rgba(255, 107, 53, 0.15);
-  color: #ff6b35;
-  border-bottom-color: #ff6b35;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-bottom-color: #fff;
 }
 
 .tab-panel {
@@ -4420,7 +4420,7 @@ body {
 .court-stat-card .stat-value {
   font-size: 2em;
   font-weight: 700;
-  color: #ff6b35;
+  color: #fff;
 }
 
 .court-stat-card .stat-label {
@@ -4451,7 +4451,7 @@ body {
 }
 
 .courts-lists-card h4 {
-  color: #ff6b35;
+  color: #fff;
   font-size: 0.9em;
   margin-bottom: 12px;
   text-transform: uppercase;
@@ -4471,7 +4471,7 @@ body {
 }
 
 .courts-lists-card .item-count {
-  color: #ff6b35;
+  color: #fff;
   font-weight: 600;
 }
 
@@ -4504,7 +4504,7 @@ body {
   }
   
   .tabs-nav .tab-btn.active {
-    border-left-color: #ff6b35;
+    border-left-color: #fff;
     border-bottom-color: transparent;
   }
   
