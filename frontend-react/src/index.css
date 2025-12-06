@@ -2110,3 +2110,171 @@ body {
   color: #6B7280;
   text-transform: capitalize;
 }
+
+
+/* ============================================
+   CAMERA ALERT ANIMATIONS
+   ============================================ */
+.camera-marker-container.pulsing {
+  animation: pulse-alert 1s ease-in-out infinite;
+}
+
+@keyframes pulse-alert {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 5px #ff0000); }
+  50% { transform: scale(1.15); filter: drop-shadow(0 0 15px #ff0000); }
+}
+
+.camera-alert-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #ff0000;
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: badge-pulse 1s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+.recording-light.alert-blink {
+  animation: blink-fast 0.5s ease-in-out infinite;
+}
+
+@keyframes blink-fast {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.camera-icon-wrapper.has-alert {
+  z-index: 1000 !important;
+}
+
+/* High-risk alert in modal */
+.logged-notice.high-risk {
+  background: #FFF3E0;
+  border: 2px solid #E65100;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.high-risk-alert {
+  color: #B0181A;
+  font-weight: 700;
+  margin-top: 8px;
+  padding: 8px;
+  background: #FFEBEE;
+  border-radius: 4px;
+}
+
+.alert-item {
+  font-size: 12px;
+  color: #E65100;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: #FFF8E1;
+  border-radius: 4px;
+}
+
+/* Lives Saved Counter */
+.lives-saved-counter {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: linear-gradient(135deg, #1B5E20 0%, #2E7D32 100%);
+  color: white;
+  padding: 16px 24px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  z-index: 1000;
+  text-align: center;
+}
+
+.lives-saved-counter .count {
+  font-size: 36px;
+  font-weight: 700;
+  display: block;
+}
+
+.lives-saved-counter .label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.9;
+}
+
+
+/* Lives saved sub-label */
+.lives-saved-counter .sub-label {
+  font-size: 10px;
+  opacity: 0.8;
+  display: block;
+  margin-top: 4px;
+}
+
+/* Highlight stat item */
+.stat-item.highlight {
+  background: rgba(176, 24, 26, 0.9);
+}
+
+.stat-item.highlight .stat-value {
+  color: #fff;
+}
+
+.stat-item.highlight .stat-label {
+  color: rgba(255,255,255,0.9);
+}
+
+
+/* =============================================================================
+   MAP MODE TOGGLE
+   ============================================================================= */
+
+.map-mode-toggle {
+  display: flex;
+  gap: 5px;
+  margin-left: 20px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+}
+
+.mode-btn {
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.mode-btn.active {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.points-count {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-right: 15px;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+}

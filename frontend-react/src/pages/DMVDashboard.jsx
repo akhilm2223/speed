@@ -8,20 +8,27 @@ function DMVDashboard() {
   const [dashboard, setDashboard] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sendingNotice, setSendingNotice] = useState(null);
+  const [actionLoading, setActionLoading] = useState(null);
+  const [activeFilter, setActiveFilter] = useState('high_risk');
+  const [selectedDrivers, setSelectedDrivers] = useState(new Set());
+  const [localCourts, setLocalCourts] = useState(null);
+  const [countyStats, setCountyStats] = useState(null);
+  const [impactMetrics, setImpactMetrics] = useState(null);
+  const [showLocalCourtsPanel, setShowLocalCourtsPanel] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     loadDashboard();
     loadAlerts();
+    loadLocalCourts();
+    loadCountyStats();
+    loadImpactMetrics();
   }, []);
 
   const loadDashboard = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/dmv/dashboard`);
-      if (res.ok) {
-        setDashboard(await res.json());
-      }
+      if (res.ok) setDashboard(await res.json());
     } catch (err) {
       console.error('Error:', err);
     } finally {
@@ -38,8 +45,35 @@ function DMVDashboard() {
     }
   };
 
+  const loadLocalCourts = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/dmv/local-courts/summary`);
+      if (res.ok) setLocalCourts(await res.json());
+    } catch (err) {
+      console.error('Error loading local courts:', err);
+    }
+  };
+
+  const loadCountyStats = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/dmv/county-stats`);
+      if (res.ok) setCountyStats(await res.json());
+    } catch (err) {
+      console.error('Error loading county stats:', err);
+    }
+  };
+
+  const loadImpactMetrics = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/dmv/impact-metrics`);
+      if (res.ok) setImpactMetrics(await res.json());
+    } catch (err) {
+      console.error('Error loading impact metrics:', err);
+    }
+  };
+
   const handleSendNotice = async (plateId) => {
-    setSendingNotice(plateId);
+    setActionLoading(plateId);
     try {
       const res = await fetch(`${API_BASE}/api/dmv/alerts/send`, {
         method: 'POST',
@@ -47,47 +81,100 @@ function DMVDashboard() {
         body: JSON.stringify({ plate_id: plateId })
       });
       if (res.ok) {
-        const data = await res.json();
-        setAlerts(prev => [{
-          id: data.alert_id, plate_id: plateId, status: 'SENT',
-          timestamp: new Date().toISOString(), message: `${plateId} – ISA Notice Sent`
-        }, ...prev]);
         loadDashboard();
+        loadAlerts();
       }
     } catch (err) {
       console.error('Error:', err);
     } finally {
-      setSendingNotice(null);
+      setActionLoading(null);
     }
   };
 
-  const getRiskColor = (risk) => {
-    if (risk >= 10) return '#B0181A';
-    if (risk >= 5) return '#C98F00';
-    return '#3E6D45';
+  const handleBatchSend = async () => {
+    if (selectedDrivers.size === 0) return;
+    setActionLoading('batch');
+    for (const plateId of selectedDrivers) {
+      await handleSendNotice(plateId);
+    }
+    setSelectedDrivers(new Set());
+    setActionLoading(null);
   };
 
-  const getStatusBadge = (driver) => {
-    if (driver.action_state === 'COMPLIANT') return { label: 'Compliant', class: 'badge-green' };
-    if (driver.action_state === 'ALERT_SENT') return { label: 'Notice Sent', class: 'badge-blue' };
-    if (driver.status === 'ISA_REQUIRED') return { label: 'ISA Required', class: 'badge-red' };
-    return { label: 'Monitoring', class: 'badge-amber' };
+  const toggleDriverSelection = (plateId) => {
+    setSelectedDrivers(prev => {
+      const next = new Set(prev);
+      if (next.has(plateId)) next.delete(plateId);
+      else next.add(plateId);
+      return next;
+    });
   };
 
-  const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+  // CRASH RISK BADGES
+  const getCrashRiskBadge = (score) => {
+    if (score >= 75) return { label: 'HIGH RISK', class: 'crash-high' };
+    if (score >= 50) return { label: 'DANGEROUS', class: 'crash-danger' };
+    if (score >= 25) return { label: 'CONCERNING', class: 'crash-warning' };
+    return { label: 'LOW', class: 'crash-low' };
+  };
+
+  // ENFORCEMENT STAGE
+  const getEnforcementButton = (driver) => {
+    const status = driver.enforcement_status;
+    if (status === 'COMPLIANT') return { icon: '✓', label: 'Compliant', class: 'stage-compliant', disabled: true };
+    if (status === 'ESCALATED') return { icon: '⚠️', label: 'Escalated', class: 'stage-escalated', disabled: true };
+    if (status === 'FOLLOW_UP_DUE') return { icon: '📝', label: 'Follow-Up', class: 'stage-followup', disabled: false };
+    if (status === 'NOTICE_SENT') return { icon: '✉️', label: 'Sent', class: 'stage-sent', disabled: true };
+    if (driver.status === 'ISA_REQUIRED') return { icon: '🆕', label: 'New', class: 'stage-new', disabled: false };
+    return { icon: '—', label: 'Monitor', class: 'stage-monitor', disabled: true };
+  };
+
+  // RECENCY INDICATOR - Shows actual date for historical data
+  const getRecencyBadge = (lastViolation) => {
+    if (!lastViolation) return { class: 'recency-old', label: '—' };
+    const date = new Date(lastViolation);
+    const formatted = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+    return { class: 'recency-moderate', label: formatted };
+  };
+
+  // FILTER LOGIC
+  const getFilteredQueue = () => {
+    if (!dashboard?.queue) return [];
+    let filtered = [...dashboard.queue];
+    
+    switch (activeFilter) {
+      case 'high_risk': filtered = filtered.filter(d => d.crash_risk_score >= 50); break;
+      case 'pending_followup': filtered = filtered.filter(d => d.enforcement_status === 'FOLLOW_UP_DUE'); break;
+      case 'nighttime': filtered = filtered.filter(d => d.is_night_heavy); break;
+      case 'isa_required': filtered = filtered.filter(d => d.status === 'ISA_REQUIRED' && d.enforcement_status === 'NEW'); break;
+      case 'recent': 
+        // Sort by most recent violation date (not filter - show all sorted by recency)
+        filtered = filtered.filter(d => d.last_violation).sort((a, b) => 
+          new Date(b.last_violation) - new Date(a.last_violation)
+        );
+        break;
+      default: break;
+    }
+    return filtered;
+  };
+
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
   const formatTime = (d) => d ? new Date(d).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
 
-  if (loading) {
-    return <div className="dmv-loading"><div className="spinner"></div><p>Loading...</p></div>;
-  }
+  if (loading) return <div className="dmv-loading"><div className="spinner"></div><p>Loading...</p></div>;
+
+  const policy = dashboard?.policy;
+  const filteredQueue = getFilteredQueue();
+  const canBatchSend = selectedDrivers.size > 0;
 
   return (
     <div className="dmv-dashboard">
+      {/* HEADER */}
       <header className="dmv-header">
         <div className="header-left">
           <div className="dmv-logo">
             <span className="logo-icon">🛡️</span>
-            <span className="logo-text">NYC DMV — ISA Enforcement Operations</span>
+            <span className="logo-text">NY DMV — ISA Enforcement Command</span>
           </div>
         </div>
         <div className="header-right">
@@ -95,115 +182,261 @@ function DMVDashboard() {
         </div>
       </header>
 
+      {/* POLICY BAR */}
+      <div className="policy-banner">
+        <div className="policy-badge">
+          <span className="policy-version">Policy {policy?.version}</span>
+          <span className="policy-rule">ISA: ≥{policy?.isa_points_threshold} pts OR ≥{policy?.isa_ticket_threshold} tickets</span>
+        </div>
+        {dashboard?.data_source && (
+          <div className="data-source-tag">📊 {dashboard.data_source.name}</div>
+        )}
+      </div>
+
       <div className="dmv-content">
         <div className="dmv-main">
-          {/* KPI Cards */}
+          {/* GOVERNOR-READY IMPACT STRIP */}
+          {impactMetrics && (
+            <div className="impact-strip">
+              <div className="impact-item">
+                <span className="impact-value">{impactMetrics.high_risk_pending_notice?.toLocaleString()}</span>
+                <span className="impact-label">High-Risk Pending Notice</span>
+              </div>
+              <div className="impact-item">
+                <span className="impact-value">{impactMetrics.cross_jurisdiction_offenders?.toLocaleString()}</span>
+                <span className="impact-label">Cross-Jurisdiction Offenders</span>
+              </div>
+              <div className="impact-item highlight">
+                <span className="impact-value">{impactMetrics.potential_lives_saved?.toLocaleString()}</span>
+                <span className="impact-label">Est. Lives Saveable (ISA)</span>
+              </div>
+            </div>
+          )}
+
+          {/* KPI CARDS */}
           <div className="kpi-strip">
-            <div className="kpi-card kpi-red">
+            <div className="kpi-card kpi-critical" onClick={() => setActiveFilter('isa_required')}>
               <div className="kpi-value">{dashboard?.kpis?.isa_required || 0}</div>
-              <div className="kpi-label">ISA-Required Drivers</div>
-              <div className="kpi-sublabel">Risk ≥ 10 points</div>
+              <div className="kpi-label">ISA Required</div>
+              <div className="kpi-action">Click to filter →</div>
             </div>
-            <div className="kpi-card kpi-amber">
+            <div className="kpi-card" onClick={() => setActiveFilter('all')}>
               <div className="kpi-value">{dashboard?.kpis?.monitoring || 0}</div>
-              <div className="kpi-label">Under Monitoring</div>
-              <div className="kpi-sublabel">Risk 5-9 points</div>
+              <div className="kpi-label">Monitoring</div>
             </div>
-            <div className="kpi-card kpi-blue">
+            <div className="kpi-card" onClick={() => setActiveFilter('nighttime')}>
               <div className="kpi-value">{dashboard?.kpis?.super_speeders || 0}</div>
-              <div className="kpi-label">🔥 Super Speeders</div>
-              <div className="kpi-sublabel">3+ violations (Jan-Sep 2025)</div>
+              <div className="kpi-label">Super Speeders</div>
             </div>
             <div className="kpi-card">
-              <div className="kpi-value">{dashboard?.kpis?.cross_borough_violators || 0}</div>
-              <div className="kpi-label">Cross-Borough</div>
-              <div className="kpi-sublabel">Multi-area speeders</div>
+              <div className="kpi-value">{dashboard?.kpis?.cross_jurisdiction_offenders || dashboard?.kpis?.cross_borough_violators || 0}</div>
+              <div className="kpi-label">Cross-Jurisdiction</div>
             </div>
           </div>
 
-          {/* Secondary KPIs */}
-          <div className="kpi-secondary">
-            <span>📍 Highest-Risk Corridor: <strong>{dashboard?.kpis?.highest_corridor}</strong> ({dashboard?.kpis?.corridor_violations?.toLocaleString()} violations)</span>
-            <span>📅 Latest Violation: <strong>{formatDate(dashboard?.kpis?.latest_violation)}</strong></span>
+          {/* COUNTY RISK CARDS */}
+          {countyStats && (
+            <div className="county-risk-strip">
+              <div className="county-card top-risk">
+                <div className="county-icon">🔴</div>
+                <div className="county-info">
+                  <div className="county-name">{countyStats.top_risk_county?.county || 'N/A'}</div>
+                  <div className="county-label">Top Risk County</div>
+                  <div className="county-stat">{countyStats.top_risk_county?.crash_risk_score}% crash risk</div>
+                </div>
+              </div>
+              <div className="county-card most-severe">
+                <div className="county-icon">⚡</div>
+                <div className="county-info">
+                  <div className="county-name">{countyStats.most_1180d_county?.county || 'N/A'}</div>
+                  <div className="county-label">Most 1180D Violations</div>
+                  <div className="county-stat">{countyStats.most_1180d_county?.count?.toLocaleString()} severe</div>
+                </div>
+              </div>
+              <div className="county-card top-five">
+                <div className="county-icon">📊</div>
+                <div className="county-info">
+                  <div className="county-label">Top 5 Counties by Risk</div>
+                  <div className="county-list">
+                    {countyStats.county_crash_risk?.slice(0, 5).map((c, i) => (
+                      <span key={i} className="county-tag">{c.county}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* LOCAL COURTS ADAPTER PANEL */}
+          <div className="local-courts-panel">
+            <div className="panel-header" onClick={() => setShowLocalCourtsPanel(!showLocalCourtsPanel)}>
+              <span className="panel-icon">⚖️</span>
+              <span className="panel-title">Local Courts Adapter</span>
+              {localCourts && (
+                <span className="panel-stats">
+                  {localCourts.unique_courts?.toLocaleString()} courts • {localCourts.unique_counties?.toLocaleString()} counties
+                </span>
+              )}
+              <span className="panel-toggle">{showLocalCourtsPanel ? '▼' : '▶'}</span>
+            </div>
+            {showLocalCourtsPanel && localCourts && (
+              <div className="panel-content">
+                <div className="courts-summary">
+                  <div className="summary-item">
+                    <span className="summary-value">{localCourts.unique_counties?.toLocaleString()}</span>
+                    <span className="summary-label">Counties Loaded</span>
+                  </div>
+                  <div className="summary-item">
+                    <span className="summary-value">{localCourts.unique_courts?.toLocaleString()}</span>
+                    <span className="summary-label">Courts Detected</span>
+                  </div>
+                  <div className="summary-item">
+                    <span className="summary-value">{localCourts.unique_police_agencies?.toLocaleString()}</span>
+                    <span className="summary-label">Police Agencies</span>
+                  </div>
+                </div>
+                <div className="courts-lists">
+                  <div className="courts-list-section">
+                    <h4>Most Active Counties</h4>
+                    {localCourts.top_counties?.slice(0, 5).map((c, i) => (
+                      <div key={i} className="list-item">
+                        <span className="item-name">{c.county}</span>
+                        <span className="item-count">{c.count?.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="courts-list-section">
+                    <h4>Top Courts</h4>
+                    {localCourts.top_courts?.slice(0, 5).map((c, i) => (
+                      <div key={i} className="list-item">
+                        <span className="item-name">{c.court}</span>
+                        <span className="item-count">{c.count?.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <button className="upload-btn" onClick={() => navigate('/dmv/courts-upload')}>
+                  📤 Upload Court CSV
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Enforcement Queue */}
+          {/* FILTER BAR */}
+          <div className="filter-bar">
+            <span className="filter-label">Filters:</span>
+            {[
+              { key: 'high_risk', icon: '⚠️', label: 'High Risk' },
+              { key: 'isa_required', icon: '🆕', label: 'Needs Notice' },
+              { key: 'pending_followup', icon: '📝', label: 'Follow-Up' },
+              { key: 'nighttime', icon: '🌙', label: 'Nighttime' },
+              { key: 'recent', icon: '📅', label: 'By Date' },
+              { key: 'all', icon: '📋', label: 'All' },
+            ].map(f => (
+              <button key={f.key} className={`filter-btn ${activeFilter === f.key ? 'active' : ''}`} onClick={() => setActiveFilter(f.key)}>
+                {f.icon} {f.label}
+              </button>
+            ))}
+            <span className="filter-count">{filteredQueue.length} drivers</span>
+            
+            {/* BATCH ACTIONS */}
+            {canBatchSend && (
+              <button className="batch-btn" onClick={handleBatchSend} disabled={actionLoading === 'batch'}>
+                📨 Send {selectedDrivers.size} Notices
+              </button>
+            )}
+          </div>
+
+          {/* ENFORCEMENT QUEUE */}
           <div className="queue-section">
             <h2 className="section-title">Enforcement Queue</h2>
             <div className="queue-table-container">
               <table className="queue-table">
                 <thead>
                   <tr>
-                    <th>Plate ID</th>
-                    <th>Violations</th>
-                    <th>Severe (1180D)</th>
-                    <th>Risk Score</th>
-                    <th>Last Violation</th>
-                    <th>Borough</th>
-                    <th>Ticket Issuer</th>
-                    <th>Status</th>
+                    <th className="col-select">
+                      <input type="checkbox" onChange={(e) => {
+                        if (e.target.checked) {
+                          const actionable = filteredQueue.filter(d => d.status === 'ISA_REQUIRED' && d.enforcement_status === 'NEW');
+                          setSelectedDrivers(new Set(actionable.map(d => d.plate_id)));
+                        } else {
+                          setSelectedDrivers(new Set());
+                        }
+                      }} />
+                    </th>
+                    <th>Driver</th>
+                    <th>Crash Risk</th>
+                    <th>Risk Factors</th>
+                    <th>Last Seen</th>
+                    <th>Court</th>
+                    <th>Stage</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {dashboard?.queue?.length === 0 && (
-                    <tr><td colSpan="9" className="empty-queue">
+                  {filteredQueue.length === 0 && (
+                    <tr><td colSpan="8" className="empty-queue">
                       <div className="empty-state">
                         <span className="empty-icon">📋</span>
-                        <p className="empty-title">No drivers in queue</p>
+                        <p className="empty-title">No drivers match this filter</p>
                       </div>
                     </td></tr>
                   )}
-                  {dashboard?.queue?.map((driver, i) => {
-                    const badge = getStatusBadge(driver);
+                  {filteredQueue.map((driver, i) => {
+                    const crashBadge = getCrashRiskBadge(driver.crash_risk_score);
+                    const stageBtn = getEnforcementButton(driver);
+                    const recency = getRecencyBadge(driver.last_violation);
+                    const isHighRisk = driver.crash_risk_score >= 50;
+                    const canSelect = driver.status === 'ISA_REQUIRED' && driver.enforcement_status === 'NEW';
+                    
                     return (
-                      <tr key={i} className={driver.status === 'ISA_REQUIRED' && driver.action_state === 'READY_FOR_ALERT' ? 'row-highlight' : ''}>
+                      <tr key={i} className={isHighRisk ? 'row-critical' : ''}>
+                        <td className="col-select">
+                          {canSelect && (
+                            <input type="checkbox" checked={selectedDrivers.has(driver.plate_id)} onChange={() => toggleDriverSelection(driver.plate_id)} />
+                          )}
+                        </td>
                         <td>
                           <button className="plate-link" onClick={() => navigate(`/dmv/drivers/${driver.plate_id}`)}>
                             {driver.plate_id}
                           </button>
+                          <div className="driver-meta-small">{driver.state}</div>
                         </td>
-                        <td>{driver.violation_count}</td>
-                        <td className={driver.high_tier_count > 0 ? 'severe-count' : ''}>{driver.high_tier_count}</td>
                         <td>
-                          <div className="risk-cell">
-                            <span className="risk-value" style={{ color: getRiskColor(driver.risk_points) }}>
-                              {driver.risk_points}
-                            </span>
-                            <div className="risk-bar-container">
-                              <div className="risk-bar-fill" style={{ 
-                                width: `${Math.min(driver.risk_points / 15 * 100, 100)}%`,
-                                backgroundColor: getRiskColor(driver.risk_points)
-                              }}></div>
-                              <div className="risk-threshold-marker"></div>
-                            </div>
+                          <div className="crash-cell">
+                            <span className={`crash-badge ${crashBadge.class}`}>{driver.crash_risk_score}%</span>
+                            <span className="crash-label">{crashBadge.label}</span>
                           </div>
                         </td>
-                        <td>{formatDate(driver.last_violation)}</td>
                         <td>
-                          {driver.primary_borough}
-                          {driver.is_cross_borough && <span className="cross-badge" title="Multiple boroughs">+</span>}
+                          <div className="risk-factors">
+                            {driver.severe_count > 0 && <span className="factor-tag severe">⚡ {driver.severe_count} severe</span>}
+                            {driver.is_night_heavy && <span className="factor-tag night">🌙 {driver.night_percentage}% night</span>}
+                            {driver.is_cross_borough && <span className="factor-tag geo">📍 {driver.borough_count} areas</span>}
+                            {driver.violation_count >= 5 && <span className="factor-tag repeat">🔁 {driver.violation_count} tickets</span>}
+                          </div>
                         </td>
-                        <td className="issuer-cell">
-                          <span className={driver.ticket_issuer?.includes('NYC') ? 'issuer-nyc' : 'issuer-local'}>
-                            {driver.ticket_issuer || 'Unknown'}
+                        <td>
+                          <span className={`recency-badge ${recency.class}`}>{recency.label}</span>
+                        </td>
+                        <td>
+                          <span className={driver.jurisdiction_type === 'NYC_DOF' ? 'court-nyc' : 'court-local'}>
+                            {driver.jurisdiction_type === 'NYC_DOF' ? 'NYC DOF' : driver.court_name || 'Local'}
                           </span>
                         </td>
                         <td>
-                          <span className={`status-badge ${badge.class}`}>{badge.label}</span>
-                          {driver.is_night_heavy && <span className="night-badge" title="50%+ nighttime">🌙</span>}
+                          <span className={`stage-badge ${stageBtn.class}`}>{stageBtn.icon} {stageBtn.label}</span>
                         </td>
                         <td>
-                          {driver.action_state === 'READY_FOR_ALERT' && (
-                            <button className="action-btn action-primary" onClick={() => handleSendNotice(driver.plate_id)} disabled={sendingNotice === driver.plate_id}>
-                              {sendingNotice === driver.plate_id ? 'Sending...' : 'Send ISA Notice'}
+                          {canSelect && (
+                            <button className="action-btn-send" onClick={() => handleSendNotice(driver.plate_id)} disabled={actionLoading === driver.plate_id}>
+                              {actionLoading === driver.plate_id ? '...' : '📨'}
                             </button>
                           )}
-                          {driver.action_state === 'ALERT_SENT' && (
-                            <button className="action-btn action-secondary" onClick={() => navigate(`/dmv/drivers/${driver.plate_id}`)}>View Case</button>
+                          {driver.enforcement_status === 'FOLLOW_UP_DUE' && (
+                            <button className="action-btn-review" onClick={() => navigate(`/dmv/drivers/${driver.plate_id}`)}>Review</button>
                           )}
-                          {driver.action_state === 'COMPLIANT' && <span className="compliant-text">✓ ISA Installed</span>}
-                          {driver.action_state === 'BELOW_THRESHOLD' && <span className="threshold-text">Below threshold</span>}
+                          {stageBtn.disabled && stageBtn.label !== 'Monitor' && <span className="action-done">{stageBtn.icon}</span>}
                         </td>
                       </tr>
                     );
@@ -214,11 +447,11 @@ function DMVDashboard() {
           </div>
         </div>
 
-        {/* Alert Feed */}
+        {/* ACTIVITY FEED */}
         <aside className="alert-feed">
-          <h3 className="feed-title">Alert Activity Log</h3>
+          <h3 className="feed-title">Activity Log</h3>
           <div className="feed-list">
-            {alerts.map((alert, i) => (
+            {alerts.slice(0, 20).map((alert, i) => (
               <div key={i} className="feed-item">
                 <div className="feed-time">{formatTime(alert.timestamp)}</div>
                 <div className="feed-content">
@@ -226,7 +459,7 @@ function DMVDashboard() {
                 </div>
               </div>
             ))}
-            {alerts.length === 0 && <p className="feed-empty">No alerts yet</p>}
+            {alerts.length === 0 && <p className="feed-empty">No activity yet</p>}
           </div>
         </aside>
       </div>

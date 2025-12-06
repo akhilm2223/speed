@@ -40,7 +40,9 @@ CREATE TABLE IF NOT EXISTS violations (
     gender                VARCHAR(1),                         -- M, F, C (org), U (unknown)
     state_of_license      VARCHAR(64),                        -- License issuing state
     police_agency         VARCHAR(128),                       -- "NYS Police - Troop T", "NYPD", etc.
-    court                 VARCHAR(128),                       -- "NYC TVB - Manhattan", etc.
+    county                VARCHAR(64),                        -- County (CRITICAL for county risk cards)
+    court                 VARCHAR(128),                       -- "NYC TVB - Manhattan", etc. (CRITICAL for local court adapter)
+    disposition           VARCHAR(64),                        -- Case outcome: GUILTY, DISMISSED, PENDING, etc. (CRITICAL for compliance)
     source                VARCHAR(16),                        -- TSLED or TVB (processing system)
     
     -- DIRECT COORDINATES (nullable - NYC data parses from violation_location)
@@ -61,6 +63,9 @@ CREATE INDEX IF NOT EXISTS idx_violations_plate ON violations(plate_id, registra
 CREATE INDEX IF NOT EXISTS idx_violations_code ON violations(violation_code);
 CREATE INDEX IF NOT EXISTS idx_violations_date ON violations(issue_date);
 CREATE INDEX IF NOT EXISTS idx_violations_location ON violations(latitude, longitude);
+CREATE INDEX IF NOT EXISTS idx_violations_county ON violations(county);           -- For county risk cards
+CREATE INDEX IF NOT EXISTS idx_violations_court ON violations(court);             -- For local court adapter
+CREATE INDEX IF NOT EXISTS idx_violations_disposition ON violations(disposition); -- For compliance tracking
 
 -- =============================================================================
 -- DMV RISK VIEW (for monitoring high-risk drivers)
@@ -116,3 +121,30 @@ CREATE TABLE IF NOT EXISTS ai_detections (
 
 CREATE INDEX IF NOT EXISTS idx_ai_detections_camera ON ai_detections(camera_id);
 CREATE INDEX IF NOT EXISTS idx_ai_detections_plate ON ai_detections(plate_id);
+
+-- =============================================================================
+-- DMV ALERTS TABLE (ISA enforcement notices with lifecycle)
+-- Lifecycle: NEW → NOTICE_SENT → FOLLOW_UP_DUE → COMPLIANT → ESCALATED
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS dmv_alerts (
+    alert_id                    BIGSERIAL PRIMARY KEY,
+    plate_id                    VARCHAR(16) NOT NULL,
+    alert_type                  VARCHAR(32) NOT NULL,  -- ISA_REQUIRED, WARNING, etc.
+    status                      VARCHAR(32) NOT NULL,  -- NEW, NOTICE_SENT, FOLLOW_UP_DUE, COMPLIANT, ESCALATED
+    risk_score_at_alert         INTEGER,
+    crash_risk_at_alert         DECIMAL(5,2),          -- Crash risk score 0-100
+    total_violations_at_alert   INTEGER,
+    reason                      TEXT,
+    responsible_party           VARCHAR(64),           -- DMV, Court, Vendor
+    due_date                    TIMESTAMPTZ,           -- Follow-up due date
+    enforcement_stage           VARCHAR(32),           -- Current enforcement stage
+    notes                       TEXT,                  -- Additional notes
+    court_name                  VARCHAR(128),          -- Assigned court
+    created_at                  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at                  TIMESTAMPTZ DEFAULT NOW(),
+    resolved_at                 TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_dmv_alerts_plate ON dmv_alerts(plate_id);
+CREATE INDEX IF NOT EXISTS idx_dmv_alerts_status ON dmv_alerts(status);
+CREATE INDEX IF NOT EXISTS idx_dmv_alerts_due_date ON dmv_alerts(due_date);

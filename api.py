@@ -10,6 +10,7 @@ Then access API at: http://localhost:5001
 """
 import os
 import re
+from datetime import datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg
@@ -356,11 +357,17 @@ def get_ai_heatmap():
         return jsonify({"error": str(e)}), 500
 
 
+# Store recent detections for SSE streaming
+RECENT_DETECTIONS = []
+MAX_RECENT_DETECTIONS = 50
+
+
 @app.route('/api/cameras/<camera_id>/detect', methods=['POST'])
 def run_detection(camera_id):
     """
     Process a dynamically detected violation from the frontend YOLO simulation.
-    Creates drivers on-the-fly when first detected - no pre-seeded data.
+    Creates real violation records and DMV alerts for high-risk drivers.
+    Integrates with DMV enforcement workflow.
     """
     try:
         data = request.json
@@ -368,7 +375,6 @@ def run_detection(camera_id):
         speed_detected = data.get('speed_detected')
         speed_limit = data.get('speed_limit', 30)
         violation_type = data.get('violation_type', 'speeding')
-        points = data.get('points', 3)
         corridor_name = data.get('corridor_name')
         
         if not plate_id:
@@ -379,7 +385,7 @@ def run_detection(camera_id):
         
         # Get camera info
         cur.execute("""
-            SELECT latitude, longitude, zone_type, name 
+            SELECT latitude, longitude, zone_type, name, borough
             FROM cameras WHERE camera_id = %s
         """, (camera_id,))
         cam_row = cur.fetchone()
@@ -388,103 +394,209 @@ def run_detection(camera_id):
             conn.close()
             return jsonify({"error": "Camera not found"}), 404
         
-        cam_lat, cam_lng, zone_type, cam_name = float(cam_row[0]), float(cam_row[1]), cam_row[2], cam_row[3]
+        cam_lat, cam_lng, zone_type, cam_name, borough = (
+            float(cam_row[0]), float(cam_row[1]), cam_row[2], cam_row[3], cam_row[4] or "NYC"
+        )
         corridor = corridor_name or cam_name
         
-        # Check if driver exists - if not, CREATE them (dynamic discovery!)
-        cur.execute("SELECT plate_id FROM drivers WHERE plate_id = %s", (plate_id,))
-        driver_exists = cur.fetchone()
+        # Calculate violation code based on speed over limit
+        speed_over = speed_detected - speed_limit
+        if speed_over >= 31:
+            violation_code = "1180D"
+            points = 8
+        elif speed_over >= 21:
+            violation_code = "1180C"
+            points = 5
+        elif speed_over >= 11:
+            violation_code = "1180B"
+            points = 3
+        else:
+            violation_code = "1180A"
+            points = 2
         
-        if not driver_exists:
-            # First time seeing this plate - create driver record
-            cur.execute("""
-                INSERT INTO drivers (plate_id, registration_state, total_violations, 
-                    current_risk_points, isa_status, first_violation_date, last_violation_date)
-                VALUES (%s, 'NY', 0, 0, 'NONE', NOW(), NOW())
-            """, (plate_id,))
+        # School/work zone bonus
+        if zone_type in ('school_zone', 'work_zone'):
+            violation_code = "1180E" if zone_type == 'school_zone' else "1180F"
+            points = 6
         
-        # Insert the AI violation
+        # Ensure vehicle exists
         cur.execute("""
-            INSERT INTO ai_violations 
-            (camera_id, plate_id, registration_state, violation_type, points, 
-             speed_detected, speed_limit, corridor_name, latitude, longitude, confidence)
-            VALUES (%s, %s, 'NY', %s, %s, %s, %s, %s, %s, %s, 0.95)
-            RETURNING violation_id
-        """, (camera_id, plate_id, violation_type, points, speed_detected, speed_limit, 
-              corridor, cam_lat, cam_lng))
+            INSERT INTO vehicles (plate_id, registration_state) 
+            VALUES (%s, 'NY') ON CONFLICT DO NOTHING
+        """, (plate_id,))
         
+        # Create REAL violation record (same as NYC Open Data format)
+        location = f"{borough}, ({cam_lat}, {cam_lng})"
+        cur.execute("""
+            INSERT INTO violations (
+                plate_id, registration_state, source_type, violation_code,
+                violation_description, issue_date, violation_location
+            ) VALUES (%s, 'NY', 'camera', %s, %s, NOW(), %s)
+            RETURNING violation_id
+        """, (
+            plate_id, violation_code,
+            f"Speed Camera: {speed_detected} MPH in {speed_limit} MPH zone at {corridor}",
+            location
+        ))
         violation_id = cur.fetchone()[0]
         
-        # Update driver risk score
+        # Get updated driver stats from violations table
         cur.execute("""
-            UPDATE drivers SET
-                total_violations = total_violations + 1,
-                current_risk_points = current_risk_points + %s,
-                last_violation_date = NOW(),
-                first_violation_date = COALESCE(first_violation_date, NOW())
-            WHERE plate_id = %s
-            RETURNING total_violations, current_risk_points, isa_status
-        """, (points, plate_id))
+            SELECT 
+                COUNT(*) as total_tickets,
+                SUM(CASE 
+                    WHEN violation_code = '1180D' THEN 8
+                    WHEN violation_code = '1180C' THEN 5
+                    WHEN violation_code = '1180B' THEN 3
+                    WHEN violation_code IN ('1180E', '1180F') THEN 6
+                    ELSE 2
+                END) as total_points,
+                COUNT(*) FILTER (WHERE violation_code IN ('1180D', '1180E', '1180F')) as severe_count,
+                COUNT(*) FILTER (
+                    WHERE EXTRACT(HOUR FROM issue_date) >= 22 
+                       OR EXTRACT(HOUR FROM issue_date) < 4
+                ) as night_violations,
+                COUNT(DISTINCT SPLIT_PART(violation_location, ',', 1)) as borough_count
+            FROM violations
+            WHERE plate_id = %s AND registration_state = 'NY'
+        """, (plate_id,))
         
-        driver_row = cur.fetchone()
-        total_v, risk_pts, isa_status = driver_row
-        new_status = isa_status
+        stats = cur.fetchone()
+        total_tickets = stats[0]
+        total_points = stats[1]
+        severe_count = stats[2]
+        night_violations = stats[3]
+        borough_count = stats[4]
+        
+        # Calculate crash risk score
+        severity_factor = min(total_points / 11, 2.0) / 2.0
+        nighttime_factor = (night_violations / total_tickets) if total_tickets > 0 else 0
+        cross_borough_factor = 1.0 if borough_count > 1 else 0.0
+        crash_risk = round((severity_factor * 0.6 + nighttime_factor * 0.3 + cross_borough_factor * 0.1) * 100, 1)
+        
+        # Determine status
+        isa_required = (total_points >= POINTS_THRESHOLD) or (total_tickets >= TICKETS_THRESHOLD)
+        status = "ISA_REQUIRED" if isa_required else ("MONITORING" if total_points >= MONITOR_THRESHOLD else "OK")
+        
+        # Create DMV alert if ISA required
         alert_created = None
-        
-        # Check thresholds: ISA required if 11+ points OR 16+ tickets
-        isa_required = (risk_pts >= POINTS_THRESHOLD) or (total_v >= TICKETS_THRESHOLD)
-        
-        if isa_required and isa_status not in ('ISA_REQUIRED', 'COMPLIANT'):
-            new_status = 'ISA_REQUIRED'
+        if isa_required:
+            # Check if alert already exists
             cur.execute("""
-                UPDATE drivers SET isa_status = 'ISA_REQUIRED'
-                WHERE plate_id = %s
+                SELECT alert_id FROM dmv_alerts 
+                WHERE plate_id = %s AND status NOT IN ('COMPLIANT', 'ESCALATED')
+                ORDER BY created_at DESC LIMIT 1
             """, (plate_id,))
+            existing_alert = cur.fetchone()
             
-            # Determine trigger reason
-            if risk_pts >= POINTS_THRESHOLD and total_v >= TICKETS_THRESHOLD:
-                reason = f"{risk_pts} points AND {total_v} tickets"
-            elif risk_pts >= POINTS_THRESHOLD:
-                reason = f"{risk_pts} points (threshold: {POINTS_THRESHOLD})"
-            else:
-                reason = f"{total_v} tickets (threshold: {TICKETS_THRESHOLD})"
-            
-            alert_created = {
-                "type": "ISA_REQUIRED",
-                "message": f"Driver {plate_id} requires ISA device: {reason}"
-            }
-        elif risk_pts >= MONITOR_THRESHOLD and isa_status == 'NONE':
-            new_status = 'MONITOR'
-            cur.execute("""
-                UPDATE drivers SET isa_status = 'MONITOR'
-                WHERE plate_id = %s
-            """, (plate_id,))
+            if not existing_alert:
+                # Create new alert
+                cur.execute("""
+                    INSERT INTO dmv_alerts (
+                        plate_id, alert_type, status, risk_score_at_alert, crash_risk_at_alert,
+                        total_violations_at_alert, reason, responsible_party, court_name
+                    ) VALUES (%s, 'ISA_REQUIRED', 'NEW', %s, %s, %s, %s, 'DMV', 'NYC Dept of Finance')
+                    RETURNING alert_id
+                """, (
+                    plate_id, total_points, crash_risk, total_tickets,
+                    f"CV Detection: {speed_detected} MPH at {corridor}. Crash Risk: {crash_risk}%"
+                ))
+                alert_id = cur.fetchone()[0]
+                alert_created = {
+                    "alert_id": alert_id,
+                    "type": "ISA_REQUIRED",
+                    "crash_risk": crash_risk,
+                    "message": f"🚨 HIGH RISK: {plate_id} requires ISA device"
+                }
         
         conn.commit()
+        
+        # Build detection result
+        detection_result = {
+            "success": True,
+            "violation_id": violation_id,
+            "plate_id": plate_id,
+            "camera_id": camera_id,
+            "camera_name": cam_name,
+            "borough": borough,
+            "speed_detected": speed_detected,
+            "speed_limit": speed_limit,
+            "violation_code": violation_code,
+            "points": points,
+            "driver": {
+                "plate_id": plate_id,
+                "total_tickets": total_tickets,
+                "total_points": total_points,
+                "crash_risk_score": crash_risk,
+                "status": status,
+                "severe_count": severe_count,
+            },
+            "alert": alert_created,
+            "is_high_risk": crash_risk >= 50,
+        }
+        
+        # Store for SSE streaming
+        RECENT_DETECTIONS.insert(0, {
+            **detection_result,
+            "timestamp": datetime.now().isoformat()
+        })
+        if len(RECENT_DETECTIONS) > MAX_RECENT_DETECTIONS:
+            RECENT_DETECTIONS.pop()
+        
+        cur.close()
+        conn.close()
+        
+        return jsonify(detection_result)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/detections/recent')
+def get_recent_detections():
+    """Get recent CV detections for live feed."""
+    limit = request.args.get('limit', 20, type=int)
+    return jsonify(RECENT_DETECTIONS[:limit])
+
+
+@app.route('/api/stats/lives-saved')
+def get_lives_saved():
+    """Calculate estimated lives saved based on ISA compliance."""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # Count compliant drivers (ISA installed)
+        cur.execute("""
+            SELECT COUNT(DISTINCT plate_id) 
+            FROM dmv_alerts WHERE status = 'COMPLIANT'
+        """)
+        compliant_count = cur.fetchone()[0] or 0
+        
+        # Each ISA device reduces crash risk by ~50%, avg 1.8 lives per fatal crash
+        # Conservative estimate: 0.1 lives saved per ISA device per year
+        lives_saved = round(compliant_count * 0.1, 1)
+        
+        # Count high-risk drivers identified
+        cur.execute("""
+            SELECT COUNT(*) FROM dmv_risk_view WHERE risk_points >= 11
+        """)
+        high_risk_identified = cur.fetchone()[0] or 0
+        
         cur.close()
         conn.close()
         
         return jsonify({
-            "success": True,
-            "violation_id": violation_id,
-            "plate_id": plate_id,
-            "violation_type": violation_type,
-            "points": points,
-            "speed_detected": speed_detected,
-            "speed_limit": speed_limit,
-            "corridor": corridor,
-            "driver": {
-                "plate_id": plate_id,
-                "total_violations": total_v,
-                "risk_points": risk_pts,
-                "isa_status": new_status,
-                "is_new": not driver_exists
-            },
-            "alert": alert_created
+            "lives_saved_estimate": lives_saved,
+            "isa_devices_installed": compliant_count,
+            "high_risk_identified": high_risk_identified,
+            "methodology": "Based on NHTSA crash reduction data for speed limiters"
         })
-        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
 
 
 @app.route('/api/reset-demo', methods=['POST'])

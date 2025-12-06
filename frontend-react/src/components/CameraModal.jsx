@@ -132,14 +132,26 @@ function CameraModal({ camera, onClose, onDetectionComplete }) {
         }
       }
       
+      // Check for high-risk drivers
+      const highRiskAlerts = results.filter(r => r.alert || r.is_high_risk);
+      
       setLoggedViolations({
         count: results.length,
         violations: results,
+        highRiskCount: highRiskAlerts.length,
+        alerts: highRiskAlerts.map(r => r.alert).filter(Boolean),
       });
-      setYoloStatus(`${results.length} VIOLATIONS LOGGED`);
+      setYoloStatus(highRiskAlerts.length > 0 
+        ? `🚨 ${highRiskAlerts.length} HIGH RISK DETECTED` 
+        : `${results.length} VIOLATIONS LOGGED`
+      );
       
       if (onDetectionComplete) {
-        onDetectionComplete({ violations_logged: results.length });
+        onDetectionComplete({ 
+          violations_logged: results.length,
+          high_risk_count: highRiskAlerts.length,
+          alerts: highRiskAlerts.map(r => r.alert).filter(Boolean),
+        });
       }
     } catch (err) {
       setError(err.message);
@@ -353,8 +365,18 @@ function CameraModal({ camera, onClose, onDetectionComplete }) {
                 </div>
                 
                 {loggedViolations && (
-                  <div className="logged-notice">
+                  <div className={`logged-notice ${loggedViolations.highRiskCount > 0 ? 'high-risk' : ''}`}>
                     ✓ {loggedViolations.count} violations logged to DMV database
+                    {loggedViolations.highRiskCount > 0 && (
+                      <div className="high-risk-alert">
+                        🚨 {loggedViolations.highRiskCount} HIGH-RISK driver(s) flagged for ISA enforcement
+                      </div>
+                    )}
+                    {loggedViolations.alerts?.map((alert, i) => (
+                      <div key={i} className="alert-item">
+                        ⚠️ {alert.message} (Crash Risk: {alert.crash_risk}%)
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

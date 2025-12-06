@@ -7,6 +7,7 @@ import './index.css';
 import DMVDashboard from './pages/DMVDashboard';
 import DriverProfile from './pages/DriverProfile';
 import MapView from './pages/MapView';
+import CourtsUpload from './pages/CourtsUpload';
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
         <Route path="/" element={<Navigate to="/dmv" replace />} />
         <Route path="/dmv" element={<DMVDashboard />} />
         <Route path="/dmv/drivers/:plateId" element={<DriverProfile />} />
+        <Route path="/dmv/courts-upload" element={<CourtsUpload />} />
         <Route path="/map" element={<MapView />} />
       </Routes>
     </BrowserRouter>

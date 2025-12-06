@@ -3,6 +3,7 @@ psycopg[binary]
 flask
 flask-cors
 python-dotenv
+python-dateutil
 opencv-python
 ultralytics
 numpy

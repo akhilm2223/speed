@@ -1366,3 +1366,1335 @@ html, body, #root {
     gap: 8px;
   }
 }
+
+
+/* ============================================
+   POLICY BANNER
+   ============================================ */
+.policy-banner {
+  background: #FFFFFF;
+  border-bottom: 1px solid #E0E6EC;
+  padding: 8px 24px;
+}
+
+.policy-badge {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.policy-version {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0A1A3D;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.policy-hint {
+  font-size: 12px;
+  color: #4A4A4A;
+  cursor: help;
+}
+
+.policy-hint:hover {
+  color: #0A1A3D;
+}
+
+/* Ensure profile page has policy banner spacing */
+.driver-profile .policy-banner {
+  position: sticky;
+  top: 0;
+  z-index: 99;
+}
+
+.driver-profile .profile-content {
+  padding-top: 24px;
+}
+
+
+/* ============================================
+   POLICY BANNER
+   ============================================ */
+.policy-banner {
+  background: #FFFFFF;
+  border-bottom: 1px solid #E0E6EC;
+  padding: 8px 24px;
+}
+
+.policy-badge {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.policy-version {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0A1A3D;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.policy-hint {
+  font-size: 12px;
+  color: #4A4A4A;
+  cursor: help;
+}
+
+.policy-hint:hover {
+  color: #0A1A3D;
+}
+
+/* Ensure profile page has policy banner spacing */
+.driver-profile .policy-banner {
+  position: sticky;
+  top: 0;
+  z-index: 99;
+}
+
+
+/* ============================================
+   CRASH RISK BADGES
+   ============================================ */
+.crash-risk-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.crash-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.crash-badge-red {
+  background: #FDE8E8;
+  color: #B0181A;
+  border: 1px solid #B0181A;
+}
+
+.crash-badge-orange {
+  background: #FFF3E0;
+  color: #E65100;
+  border: 1px solid #E65100;
+}
+
+.crash-badge-yellow {
+  background: #FFF8E1;
+  color: #F57F17;
+  border: 1px solid #F9A825;
+}
+
+.crash-badge-green {
+  background: #E8F5E9;
+  color: #2E7D32;
+  border: 1px solid #3E6D45;
+}
+
+.crash-level {
+  font-size: 10px;
+  color: #4A4A4A;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.crash-badge-large {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 20px;
+  border-radius: 8px;
+  min-width: 140px;
+}
+
+.crash-badge-large .crash-score {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.crash-badge-large .crash-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+
+.crash-risk-display {
+  display: flex;
+  align-items: center;
+}
+
+/* ============================================
+   ENFORCEMENT STATUS BADGES
+   ============================================ */
+.enforcement-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.enforcement-new {
+  background: #E3F2FD;
+  color: #1565C0;
+}
+
+.enforcement-sent {
+  background: #E8F0FE;
+  color: #1A4A8B;
+}
+
+.enforcement-followup {
+  background: #FFF3E0;
+  color: #E65100;
+}
+
+.enforcement-compliant {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.enforcement-escalated {
+  background: #FFEBEE;
+  color: #C62828;
+}
+
+/* ============================================
+   COURT / JURISDICTION STYLES
+   ============================================ */
+.court-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.jurisdiction-nyc {
+  display: inline-block;
+  background: #E8F0FE;
+  color: #1A4A8B;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.jurisdiction-local {
+  display: inline-block;
+  background: #F0F4E8;
+  color: #3E6D45;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.severe-indicator {
+  color: #B0181A;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.escalated-text {
+  color: #C62828;
+  font-weight: 500;
+  font-size: 13px;
+}
+
+/* ============================================
+   WHY THIS DRIVER MATTERS CARD
+   ============================================ */
+.why-matters-card {
+  background: linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%);
+  border: 2px solid #F9A825;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.why-matters-card .card-title {
+  color: #E65100;
+  margin: 0 0 16px 0;
+  padding: 0;
+  border: none;
+  font-size: 16px;
+}
+
+.why-matters-content {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.matter-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 80px;
+}
+
+.matter-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #0A1A3D;
+}
+
+.matter-label {
+  font-size: 11px;
+  color: #5D4037;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.lives-stat .matter-value {
+  color: #B0181A;
+}
+
+.matter-footnote {
+  margin-top: 12px;
+  font-size: 11px;
+  color: #795548;
+  font-style: italic;
+}
+
+/* ============================================
+   ACTION STATUS BOXES (Extended)
+   ============================================ */
+.action-status-box.amber {
+  background: #FFF3E0;
+  border: 1px solid #E65100;
+}
+
+.action-status-box.red {
+  background: #FFEBEE;
+  border: 1px solid #C62828;
+}
+
+.action-btn-full.danger {
+  background: #FFEBEE;
+  color: #C62828;
+  border: 1px solid #C62828;
+}
+
+.action-btn-full.danger:hover {
+  background: #FFCDD2;
+}
+
+/* ============================================
+   HISTORY DOT COLORS
+   ============================================ */
+.history-dot.dot-green {
+  background: #2E7D32;
+}
+
+.history-dot.dot-red {
+  background: #C62828;
+}
+
+/* ============================================
+   FEED STATUS
+   ============================================ */
+.feed-status {
+  font-size: 10px;
+  color: #6B7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+
+/* ============================================
+   DATA SOURCE NOTE
+   ============================================ */
+.data-source-note {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  padding: 4px 12px;
+  background: #E3F2FD;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.data-source-label {
+  color: #1565C0;
+  font-weight: 600;
+}
+
+.data-source-coverage {
+  color: #1976D2;
+}
+
+.policy-badge {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  .data-source-note {
+    margin-left: 0;
+    margin-top: 8px;
+  }
+}
+
+
+/* ============================================
+   GOVERNOR-READY UI - CLEAR COLOR SEPARATION
+   ============================================ */
+
+/* CRASH RISK BADGES - Only for severity */
+.crash-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  min-width: 45px;
+  text-align: center;
+}
+
+.crash-high {
+  background: #FFEBEE;
+  color: #B71C1C;
+  border: 2px solid #B71C1C;
+}
+
+.crash-danger {
+  background: #FFF3E0;
+  color: #E65100;
+  border: 2px solid #E65100;
+}
+
+.crash-warning {
+  background: #FFFDE7;
+  color: #F57F17;
+  border: 2px solid #F9A825;
+}
+
+.crash-low {
+  background: #E8F5E9;
+  color: #2E7D32;
+  border: 2px solid #2E7D32;
+}
+
+.crash-label {
+  display: block;
+  font-size: 10px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+/* ENFORCEMENT STAGE BADGES - Shape/icon based */
+.stage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.stage-new {
+  background: #ECEFF1;
+  color: #37474F;
+  border: 1px solid #90A4AE;
+}
+
+.stage-sent {
+  background: #E3F2FD;
+  color: #1565C0;
+  border: 1px solid #64B5F6;
+}
+
+.stage-followup {
+  background: #FFF8E1;
+  color: #F57F17;
+  border: 1px solid #FFD54F;
+}
+
+.stage-compliant {
+  background: #E8F5E9;
+  color: #2E7D32;
+  border: 1px solid #81C784;
+}
+
+.stage-escalated {
+  background: #FFEBEE;
+  color: #C62828;
+  border: 1px solid #EF5350;
+}
+
+.stage-monitor {
+  background: #F5F5F5;
+  color: #757575;
+  border: 1px solid #BDBDBD;
+}
+
+/* FILTER BAR */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #FFFFFF;
+  border: 1px solid #E0E6EC;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0A1A3D;
+  margin-right: 8px;
+}
+
+.filter-btn {
+  padding: 6px 12px;
+  border: 1px solid #E0E6EC;
+  border-radius: 20px;
+  background: #FFFFFF;
+  font-size: 12px;
+  font-weight: 500;
+  color: #4A4A4A;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.filter-btn:hover {
+  background: #F5F5F5;
+  border-color: #BDBDBD;
+}
+
+.filter-btn.active {
+  background: #0A1A3D;
+  color: #FFFFFF;
+  border-color: #0A1A3D;
+}
+
+.filter-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+}
+
+/* CLEAN TABLE STYLES */
+.row-critical {
+  background: #FFF8F8 !important;
+}
+
+.row-critical:hover {
+  background: #FFEBEE !important;
+}
+
+.points-cell {
+  font-weight: 700;
+  font-size: 16px;
+  color: #0A1A3D;
+}
+
+.driver-meta-small {
+  font-size: 11px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.court-nyc {
+  font-size: 12px;
+  color: #1565C0;
+}
+
+.court-local {
+  font-size: 12px;
+  color: #2E7D32;
+}
+
+/* ACTION BUTTONS - Clean */
+.action-btn-send {
+  padding: 6px 12px;
+  background: #0A1A3D;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.action-btn-send:hover {
+  background: #1A2A4D;
+}
+
+.action-btn-send:disabled {
+  background: #BDBDBD;
+  cursor: not-allowed;
+}
+
+.action-btn-review {
+  padding: 6px 12px;
+  background: #FFFFFF;
+  color: #0A1A3D;
+  border: 1px solid #0A1A3D;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.action-btn-review:hover {
+  background: #F5F5F5;
+}
+
+.action-done {
+  font-size: 16px;
+}
+
+/* KPI CRITICAL */
+.kpi-card.kpi-critical {
+  border-left: 4px solid #B71C1C;
+  background: #FFF8F8;
+}
+
+.kpi-card.kpi-critical .kpi-value {
+  color: #B71C1C;
+}
+
+/* POLICY RULE */
+.policy-rule {
+  font-size: 12px;
+  color: #666;
+  margin-left: 16px;
+}
+
+/* DATA SOURCE TAG */
+.data-source-tag {
+  font-size: 12px;
+  color: #1565C0;
+  background: #E3F2FD;
+  padding: 4px 12px;
+  border-radius: 12px;
+  margin-left: auto;
+}
+
+
+/* ============================================
+   ENHANCED DASHBOARD - HACKATHON READY
+   ============================================ */
+
+/* RISK FACTORS TAGS */
+.risk-factors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.factor-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.factor-tag.severe {
+  background: #FFEBEE;
+  color: #B71C1C;
+}
+
+.factor-tag.night {
+  background: #E8EAF6;
+  color: #283593;
+}
+
+.factor-tag.geo {
+  background: #E3F2FD;
+  color: #1565C0;
+}
+
+.factor-tag.repeat {
+  background: #FFF3E0;
+  color: #E65100;
+}
+
+/* RECENCY BADGES */
+.recency-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.recency-hot {
+  background: #FFEBEE;
+  color: #B71C1C;
+  animation: pulse-subtle 2s infinite;
+}
+
+.recency-recent {
+  background: #FFF3E0;
+  color: #E65100;
+}
+
+.recency-moderate {
+  background: #F5F5F5;
+  color: #616161;
+}
+
+.recency-old {
+  background: #FAFAFA;
+  color: #9E9E9E;
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* CRASH CELL */
+.crash-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+/* BATCH ACTIONS */
+.batch-btn {
+  padding: 8px 16px;
+  background: #0A1A3D;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 16px;
+  transition: background 0.2s;
+}
+
+.batch-btn:hover {
+  background: #1A2A4D;
+}
+
+.batch-btn:disabled {
+  background: #BDBDBD;
+  cursor: not-allowed;
+}
+
+/* COLUMN SELECT */
+.col-select {
+  width: 40px;
+  text-align: center;
+}
+
+.col-select input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* KPI CLICKABLE */
+.kpi-card {
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.kpi-action {
+  font-size: 10px;
+  color: #666;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.kpi-card:hover .kpi-action {
+  opacity: 1;
+}
+
+/* COMPACT ACTION BUTTON */
+.action-btn-send {
+  padding: 6px 10px;
+  min-width: 36px;
+}
+
+/* TABLE IMPROVEMENTS */
+.queue-table th {
+  position: sticky;
+  top: 0;
+  background: #F7F9FB;
+  z-index: 10;
+}
+
+.queue-table td {
+  vertical-align: middle;
+}
+
+/* COURT BADGES */
+.court-nyc, .court-local {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.court-nyc {
+  background: #E3F2FD;
+  color: #1565C0;
+}
+
+.court-local {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+
+/* =============================================================================
+   GOVERNOR-READY IMPACT STRIP
+   ============================================================================= */
+
+.impact-strip {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  padding: 15px 20px;
+  background: linear-gradient(135deg, #1a237e 0%, #0d47a1 100%);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.impact-item {
+  flex: 1;
+  text-align: center;
+  padding: 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.impact-item:last-child {
+  border-right: none;
+}
+
+.impact-item.highlight {
+  background: rgba(76, 175, 80, 0.2);
+  border-radius: 8px;
+}
+
+.impact-value {
+  display: block;
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.impact-item.highlight .impact-value {
+  color: #4caf50;
+}
+
+.impact-label {
+  display: block;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* =============================================================================
+   COUNTY RISK CARDS
+   ============================================================================= */
+
+.county-risk-strip {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.county-card {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px;
+  background: #1e293b;
+  border-radius: 10px;
+  border: 1px solid #334155;
+}
+
+.county-card.top-risk {
+  border-left: 4px solid #ef4444;
+}
+
+.county-card.most-severe {
+  border-left: 4px solid #f59e0b;
+}
+
+.county-card.top-five {
+  border-left: 4px solid #3b82f6;
+}
+
+.county-icon {
+  font-size: 24px;
+}
+
+.county-info {
+  flex: 1;
+}
+
+.county-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.county-label {
+  font-size: 11px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.county-stat {
+  font-size: 13px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.county-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.county-tag {
+  padding: 2px 8px;
+  background: #334155;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+/* =============================================================================
+   LOCAL COURTS ADAPTER PANEL
+   ============================================================================= */
+
+.local-courts-panel {
+  background: #1e293b;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 15px 20px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.panel-header:hover {
+  background: #334155;
+}
+
+.panel-icon {
+  font-size: 20px;
+}
+
+.panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.panel-stats {
+  flex: 1;
+  text-align: right;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.panel-toggle {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.panel-content {
+  padding: 20px;
+  border-top: 1px solid #334155;
+  background: #0f172a;
+}
+
+.courts-summary {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.summary-item {
+  flex: 1;
+  text-align: center;
+  padding: 15px;
+  background: #1e293b;
+  border-radius: 8px;
+}
+
+.summary-value {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  color: #3b82f6;
+}
+
+.summary-label {
+  display: block;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 4px;
+  text-transform: uppercase;
+}
+
+.courts-lists {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 15px;
+}
+
+.courts-list-section {
+  flex: 1;
+}
+
+.courts-list-section h4 {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.list-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: #1e293b;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.item-name {
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+.item-count {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.upload-btn {
+  width: 100%;
+  padding: 12px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.upload-btn:hover {
+  background: #2563eb;
+}
+
+
+/* =============================================================================
+   COURT UPLOAD PAGE
+   ============================================================================= */
+
+.upload-container {
+  display: flex;
+  gap: 30px;
+  padding: 30px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.upload-card {
+  flex: 2;
+  background: #1e293b;
+  border-radius: 12px;
+  padding: 30px;
+  border: 1px solid #334155;
+}
+
+.upload-card h2 {
+  color: #fff;
+  margin-bottom: 10px;
+}
+
+.upload-desc {
+  color: #94a3b8;
+  margin-bottom: 25px;
+}
+
+.expected-format {
+  background: #0f172a;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 25px;
+}
+
+.expected-format h4 {
+  color: #94a3b8;
+  font-size: 12px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.format-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.col-tag {
+  padding: 4px 10px;
+  background: #334155;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #3b82f6;
+  font-family: monospace;
+}
+
+.file-input-area {
+  margin-bottom: 20px;
+}
+
+.file-input {
+  display: none;
+}
+
+.file-label {
+  display: block;
+  padding: 40px;
+  border: 2px dashed #334155;
+  border-radius: 10px;
+  text-align: center;
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.file-label:hover {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.preview-section {
+  margin-bottom: 20px;
+}
+
+.preview-section h4 {
+  color: #94a3b8;
+  font-size: 12px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.preview-table-container {
+  overflow-x: auto;
+  background: #0f172a;
+  border-radius: 8px;
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.preview-table th {
+  background: #1e293b;
+  color: #94a3b8;
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid #334155;
+}
+
+.preview-table td {
+  padding: 8px 10px;
+  color: #e2e8f0;
+  border-bottom: 1px solid #1e293b;
+}
+
+.upload-submit-btn {
+  width: 100%;
+  padding: 15px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.upload-submit-btn:hover {
+  transform: translateY(-2px);
+}
+
+.upload-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.upload-result {
+  margin-top: 20px;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.upload-result.success {
+  background: rgba(76, 175, 80, 0.2);
+  border: 1px solid #4caf50;
+  color: #4caf50;
+}
+
+.upload-result.error {
+  background: rgba(244, 67, 54, 0.2);
+  border: 1px solid #f44336;
+  color: #f44336;
+}
+
+.upload-info-card {
+  flex: 1;
+  background: #1e293b;
+  border-radius: 12px;
+  padding: 25px;
+  border: 1px solid #334155;
+  height: fit-content;
+}
+
+.upload-info-card h3 {
+  color: #fff;
+  margin-bottom: 20px;
+}
+
+.info-section {
+  margin-bottom: 20px;
+}
+
+.info-section h4 {
+  color: #94a3b8;
+  font-size: 12px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.info-section ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.info-section li {
+  color: #e2e8f0;
+  font-size: 13px;
+  padding: 5px 0;
+  padding-left: 15px;
+  position: relative;
+}
+
+.info-section li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: #3b82f6;
+}
+
+.court-count {
+  font-size: 24px;
+  font-weight: 700;
+  color: #3b82f6;
+}
+
+
+/* =============================================================================
+   CROSS-JURISDICTION BADGES
+   ============================================================================= */
+
+.cross-jurisdiction-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 15px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+}
+
+.cj-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.cj-badge.counties {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #fff;
+}
+
+.cj-badge.repeat {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #fff;
+}
+
+.cj-badge.agencies {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: #fff;
+}
+
+.cj-badge.courts {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #fff;
+}

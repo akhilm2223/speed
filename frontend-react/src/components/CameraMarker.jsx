@@ -1,14 +1,16 @@
-import React from 'react';
 import { Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 
-// White camera icon - clean CCTV style
-const createCameraIcon = (isActive) => {
+// Clean camera icon - Green glow = LIVE, Red pulse = ALERT detected
+const createCameraIcon = (isActive, hasAlert = false, alertCount = 0) => {
+  // Map colors: Green = active camera, White = inactive, Red pulse = alert
   const color = isActive ? '#00ff00' : '#ffffff';
+  const pulseClass = hasAlert ? 'pulsing' : (isActive ? 'active' : '');
   
   return L.divIcon({
     html: `
-      <div class="camera-marker-container ${isActive ? 'active' : ''}">
+      <div class="camera-marker-container ${pulseClass}">
+        ${hasAlert ? `<div class="camera-alert-badge">${alertCount}</div>` : ''}
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="40" height="40">
           <!-- Camera body -->
           <rect x="8" y="16" width="24" height="16" rx="2" fill="#1a1a2e" stroke="${color}" stroke-width="2"/>
@@ -18,7 +20,7 @@ const createCameraIcon = (isActive) => {
           <circle cx="20" cy="24" r="3" fill="${color}" opacity="0.9"/>
           <!-- Inner lens -->
           <circle cx="20" cy="24" r="1.5" fill="#0a0a15"/>
-          <!-- Recording light -->
+          <!-- Recording light - always red -->
           <circle cx="28" cy="19" r="2" fill="#ff0000" class="recording-light"/>
           <!-- Mount arm -->
           <path d="M32 20 L38 16 L38 32 L32 28" fill="#1a1a2e" stroke="${color}" stroke-width="1.5"/>
@@ -27,18 +29,18 @@ const createCameraIcon = (isActive) => {
         </svg>
       </div>
     `,
-    className: 'camera-icon-wrapper',
+    className: `camera-icon-wrapper ${hasAlert ? 'has-alert' : ''}`,
     iconSize: [40, 40],
     iconAnchor: [20, 20],
     popupAnchor: [0, -20]
   });
 };
 
-function CameraMarker({ camera, onClick, isActive }) {
+function CameraMarker({ camera, onClick, isActive, hasAlert = false, alertCount = 0 }) {
   return (
     <Marker
       position={[camera.latitude, camera.longitude]}
-      icon={createCameraIcon(isActive)}
+      icon={createCameraIcon(isActive, hasAlert, alertCount)}
       eventHandlers={{
         click: () => onClick(camera)
       }}

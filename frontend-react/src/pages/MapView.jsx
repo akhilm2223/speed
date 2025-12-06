@@ -248,13 +248,17 @@ function MapView() {
   const [loading, setLoading] = useState(true);
   const [selectedCamera, setSelectedCamera] = useState(null);
   const [mapInstance, setMapInstance] = useState(null);
-  const [pointsDrawn, setPointsDrawn] = useState(0);
   const [selectedViolation, setSelectedViolation] = useState(null);
   const [violationPopupPos, setViolationPopupPos] = useState(null);
+  const [cameraAlerts, setCameraAlerts] = useState({});  // {camera_id: alertCount}
+  const [livesSaved, setLivesSaved] = useState({ count: 0, devices: 0 });
+  const [mapMode, setMapMode] = useState('statewide'); // 'statewide', 'nyc', 'suffolk'
+  const [pointsDisplayed, setPointsDisplayed] = useState(0);
 
   useEffect(() => {
     loadData();
-  }, []);
+    loadLivesSaved();
+  }, [mapMode]);
 
   // Close tooltip when map moves
   useEffect(() => {
@@ -298,12 +302,35 @@ function MapView() {
     }
   };
 
+  const loadLivesSaved = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/stats/lives-saved`);
+      if (res.ok) {
+        const data = await res.json();
+        setLivesSaved({ 
+          count: data.lives_saved_estimate || 0, 
+          devices: data.isa_devices_installed || 0 
+        });
+      }
+    } catch (err) {
+      console.error('Error loading lives saved:', err);
+    }
+  };
+
   const handleCameraClick = (camera) => {
     setSelectedCamera(camera);
   };
 
-  const handleDetectionComplete = () => {
-    // Could refresh data here
+  const handleDetectionComplete = (result) => {
+    // Track alerts per camera
+    if (result?.high_risk_count > 0 && selectedCamera) {
+      setCameraAlerts(prev => ({
+        ...prev,
+        [selectedCamera.camera_id]: (prev[selectedCamera.camera_id] || 0) + result.high_risk_count
+      }));
+    }
+    // Refresh lives saved counter
+    loadLivesSaved();
   };
 
   return (
@@ -313,8 +340,29 @@ function MapView() {
         <div className="header-left">
           <span className="logo-icon">🗺️</span>
           <span className="logo-text">NY State Violation Map</span>
+          <div className="map-mode-toggle">
+            <button 
+              className={`mode-btn ${mapMode === 'statewide' ? 'active' : ''}`}
+              onClick={() => setMapMode('statewide')}
+            >
+              🗽 Statewide
+            </button>
+            <button 
+              className={`mode-btn ${mapMode === 'nyc' ? 'active' : ''}`}
+              onClick={() => setMapMode('nyc')}
+            >
+              🏙️ NYC Only
+            </button>
+            <button 
+              className={`mode-btn ${mapMode === 'suffolk' ? 'active' : ''}`}
+              onClick={() => setMapMode('suffolk')}
+            >
+              📍 Suffolk
+            </button>
+          </div>
         </div>
         <div className="header-right">
+          <span className="points-count">{heatmapPoints.length.toLocaleString()} violations loaded</span>
           <button className="nav-link primary" onClick={() => navigate('/dmv')}>
             ← Back to DMV Dashboard
           </button>
@@ -337,14 +385,14 @@ function MapView() {
           >
             <MapController onMapReady={setMapInstance} />
             <TileLayer
-              attribution='&copy; OpenStreetMap'
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+              attribution='&copy; Esri, Maxar, Earthstar Geographics'
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              maxZoom={19}
             />
             
             {heatmapPoints.length > 0 && (
               <ViolationLayer 
                 points={heatmapPoints} 
-                onPointsDrawn={(drawn, total) => setPointsDrawn(drawn)}
                 onPointClick={(point, screenPos) => {
                   setSelectedViolation(point);
                   setViolationPopupPos(screenPos);
@@ -358,6 +406,8 @@ function MapView() {
                 camera={camera}
                 onClick={handleCameraClick}
                 isActive={selectedCamera?.camera_id === camera.camera_id}
+                hasAlert={cameraAlerts[camera.camera_id] > 0}
+                alertCount={cameraAlerts[camera.camera_id] || 0}
               />
             ))}
           </MapContainer>
@@ -373,7 +423,20 @@ function MapView() {
             <span className="stat-value">{cameras.length}</span>
             <span className="stat-label">AI Cameras</span>
           </div>
+          <div className="stat-item highlight">
+            <span className="stat-value">{Object.values(cameraAlerts).reduce((a, b) => a + b, 0)}</span>
+            <span className="stat-label">High-Risk Detected</span>
+          </div>
         </div>
+
+        {/* Lives Saved Counter */}
+        {livesSaved.devices > 0 && (
+          <div className="lives-saved-counter">
+            <span className="count">{livesSaved.count}</span>
+            <span className="label">Lives Saved (Est.)</span>
+            <span className="sub-label">{livesSaved.devices} ISA Devices Installed</span>
+          </div>
+        )}
 
         {/* Violation Legend */}
         <div className="heatmap-legend">
