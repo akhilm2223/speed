@@ -344,13 +344,21 @@ def get_dashboard():
         # Enforcement queue: top 5000 drivers by risk
         # Pre-compute license violation counts AND points for performance
         points_case_sql = "CASE " + " ".join([f"WHEN violation_code = '{code}' THEN {points}" for code, points in policy["points_per_code"].items()]) + f" ELSE {policy['default_points']} END"
+        severe_codes = policy.get("severe_codes", ["1180D", "1180E", "1180F"])
+        severe_codes_sql = ", ".join(f"'{c}'" for c in severe_codes)
         
         cur.execute(f"""
             WITH license_stats AS (
                 SELECT 
                     TRIM(driver_license_number) as license_num,
                     COUNT(*) as license_violation_count,
-                    SUM(CASE WHEN disposition = 'GUILTY' THEN {points_case_sql} ELSE 0 END) as license_points
+                    SUM(CASE WHEN disposition = 'GUILTY' THEN {points_case_sql} ELSE 0 END) as license_points,
+                    COUNT(*) FILTER (WHERE disposition = 'GUILTY' AND violation_code IN ({severe_codes_sql})) as license_severe_count,
+                    COUNT(*) FILTER (
+                        WHERE disposition = 'GUILTY'
+                        AND (EXTRACT(HOUR FROM date_of_violation) >= 22 
+                             OR EXTRACT(HOUR FROM date_of_violation) < 4)
+                    ) as license_night_violations
                 FROM violations
                 WHERE driver_license_number IS NOT NULL
                   AND driver_license_number NOT IN ('', 'NA', 'UNKNOWN')
@@ -363,7 +371,9 @@ def get_dashboard():
                 latest_v.driver_license_number,
                 COALESCE(license_stats.license_violation_count, 0) as license_violation_count,
                 rv.primary_agency,
-                COALESCE(license_stats.license_points, 0) as license_points
+                COALESCE(license_stats.license_points, 0) as license_points,
+                COALESCE(license_stats.license_severe_count, 0) as license_severe_count,
+                COALESCE(license_stats.license_night_violations, 0) as license_night_violations
             FROM (
                 SELECT * FROM dmv_risk_view ORDER BY risk_points DESC LIMIT 5000
             ) rv
@@ -382,10 +392,10 @@ def get_dashboard():
             violation_count = row[2]  # Plate violation count
             risk_points = row[3]  # Plate points
             last_violation = row[4]
-            severe_count = row[5]
+            plate_severe_count = row[5]  # Plate-level severe count
             high_tier_count = row[6]
             low_tier_count = row[7]
-            night_violations = row[8]
+            plate_night_violations = row[8]  # Plate-level night violations
             primary_borough = row[9]
             borough_count = row[10]
             primary_court = row[11]
@@ -393,10 +403,24 @@ def get_dashboard():
             license_violation_count = row[13] if row[13] is not None else 0  # License-specific violation count
             police_agency = row[14] if len(row) > 14 else "Unknown"
             license_points = row[15] if len(row) > 15 else 0  # License-specific points
+            license_severe_count = row[16] if len(row) > 16 else 0  # License-specific severe count
+            license_night_violations = row[17] if len(row) > 17 else 0  # License-specific night violations
             
-            # Use license-specific counts when license number exists, otherwise use plate counts
-            display_violation_count = license_violation_count if driver_license_number and license_violation_count > 0 else violation_count
-            display_points = license_points if driver_license_number and license_points > 0 else risk_points
+            # Use license-specific data when license number exists, otherwise use plate data
+            # CRITICAL: If driver has violations (even if 0 points due to DISMISSED), show driver stats
+            # Only fall back to plate stats if no driver license data exists
+            if driver_license_number and license_violation_count > 0:
+                # Driver exists with violations - show their personal stats
+                display_violation_count = license_violation_count
+                display_points = license_points  # May be 0 if all dismissed - that's correct!
+                severe_count = license_severe_count
+                night_violations = license_night_violations
+            else:
+                # No driver license or no violations for this driver - show plate stats
+                display_violation_count = violation_count
+                display_points = risk_points
+                severe_count = plate_severe_count
+                night_violations = plate_night_violations
             
             status = compute_status(display_points, display_violation_count, policy)
             trigger_reason = get_trigger_reason(display_points, display_violation_count, policy)
@@ -414,7 +438,7 @@ def get_dashboard():
             )
             
             is_cross_borough = borough_count >= 2
-            is_night_heavy = (night_violations / violation_count) >= 0.5 if violation_count > 0 else False
+            is_night_heavy = (night_violations / display_violation_count) >= 0.5 if display_violation_count > 0 else False
             
             all_drivers.append({
                 "plate_id": plate_id,
@@ -432,7 +456,7 @@ def get_dashboard():
                 "high_tier_count": high_tier_count,
                 "low_tier_count": low_tier_count,
                 "night_violations": night_violations,
-                "night_percentage": round((night_violations / violation_count) * 100) if violation_count > 0 else 0,
+                "night_percentage": round((night_violations / display_violation_count) * 100) if display_violation_count > 0 else 0,
                 "primary_borough": primary_borough,
                 "borough_count": borough_count,
                 "primary_court": primary_court,
