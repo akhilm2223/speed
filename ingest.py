@@ -93,9 +93,9 @@ def fetch_violations_from_api(max_records):
             where += f" AND violation_date < '{last_date}'"
         
         # Select fields (API has plate fields)
-            select_fields = ("evnt_key, reg_plate_num, reg_state_cd, violation_date, "
-                           "violation_time, violation_code, city_nm, rpt_owning_cmd, "
-                           "latitude, longitude")
+        select_fields = ("evnt_key, reg_plate_num, reg_state_cd, violation_date, "
+                         "violation_time, violation_code, city_nm, rpt_owning_cmd, "
+                         "latitude, longitude")
         
         # Only fetch what we need
         remaining = max_records - len(all_data)
@@ -214,7 +214,7 @@ def setup_database():
                 print("Tables created.")
 
 
-def prepare_record(row):
+def prepare_record(row, driver_pool=None):
     """Prepare a single record for batch insert. Returns (vehicle_tuple, violation_tuple) or None if invalid."""
     # Require valid coordinates
     if not is_valid_location(row):
@@ -236,17 +236,20 @@ def prepare_record(row):
     date_of_violation = parse_datetime(row.get("violation_date"), row.get("violation_time"))
     violation_code = row.get("violation_code")
     
-    # Generate driver information
-    driver_license_number = generate_driver_license_number()
-    driver_full_name = generate_driver_name()
-    date_of_birth = generate_date_of_birth()
-    
-    # Generate date of conviction (30-90 days after violation)
-    if date_of_violation:
-        conviction_days = random.randint(30, 90)
-        date_of_conviction = date_of_violation + timedelta(days=conviction_days)
+    # Generate or reuse driver information (5% chance to reuse existing driver)
+    if driver_pool and random.random() < 0.05:
+        # Reuse existing driver (repeat offender)
+        driver_license_number, driver_full_name, date_of_birth = random.choice(driver_pool)
     else:
-        date_of_conviction = None
+        # Generate new driver
+        driver_license_number = generate_driver_license_number()
+        driver_full_name = generate_driver_name()
+        date_of_birth = generate_date_of_birth()
+        # Add to pool for potential reuse
+        if driver_pool is not None:
+            driver_pool.append((driver_license_number, driver_full_name, date_of_birth))
+            if len(driver_pool) > 1000:
+                driver_pool[:] = driver_pool[-500:]  # Keep last 500
     
     # Generate disposition
     disposition_options = ["GUILTY", "NOT GUILTY","DISMISSED"]
@@ -257,6 +260,12 @@ def prepare_record(row):
     lon = float(row.get("longitude", 0))
     
     vehicle = (plate, state)
+    
+    # Always use "NYC Police Department" for police_agency
+    police_agency = "NYC Police Department"
+    ticket_issuer = "NYC Dept of Finance"  # NYC Open Data is all NYC
+    source_type = "nyc_open_data"
+    
     violation = (
         driver_license_number,
         driver_full_name,
@@ -266,10 +275,12 @@ def prepare_record(row):
         state,  # plate_state
         violation_code,
         date_of_violation,
-        date_of_conviction,
         disposition,
         lat,
         lon,
+        police_agency,
+        ticket_issuer,
+        source_type,
     )
     
     return vehicle, violation
@@ -286,13 +297,14 @@ def save_to_database(violations):
     vehicles = set()
     violation_records = []
     source_stats = {}  # {source_name: {"valid": 0, "invalid": 0}}
+    driver_pool = []  # For repeat offender drivers: [(license, name, dob), ...]
     
     for row in violations:
         source = row.get("_source", "Unknown")
         if source not in source_stats:
             source_stats[source] = {"valid": 0, "invalid": 0}
         
-        result = prepare_record(row)
+        result = prepare_record(row, driver_pool)
         if result is None:
             source_stats[source]["invalid"] += 1
             continue
@@ -345,8 +357,9 @@ def save_to_database(violations):
             """INSERT INTO violations (
                 driver_license_number, driver_full_name, date_of_birth, license_state,
                 plate_id, plate_state, violation_code, date_of_violation,
-                date_of_conviction, disposition, latitude, longitude
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                disposition, latitude, longitude,
+                police_agency, ticket_issuer, source_type
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             batch
         )
         inserted += len(batch)
@@ -431,3 +444,4 @@ if __name__ == "__main__":
     print(f"  DONE in {total_time:.1f}s!")
     print(f"  (Fetch: {fetch_time:.1f}s, DB: {db_time:.1f}s)")
     print("=" * 50)
+

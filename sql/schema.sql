@@ -18,10 +18,12 @@ CREATE TABLE IF NOT EXISTS violations (
     plate_state           VARCHAR(10) NOT NULL,
     violation_code        VARCHAR(64) NOT NULL,
     date_of_violation     TIMESTAMPTZ NOT NULL,
-    date_of_conviction    TIMESTAMPTZ,
     disposition           VARCHAR(64),
     latitude              DECIMAL(10, 8),
     longitude             DECIMAL(11, 8),
+    police_agency         VARCHAR(128),
+    ticket_issuer         VARCHAR(128),
+    source_type           VARCHAR(64),
     created_at            TIMESTAMPTZ DEFAULT NOW(),
     FOREIGN KEY (plate_id, plate_state) REFERENCES vehicles (plate_id, registration_state) ON DELETE CASCADE
 );
@@ -86,3 +88,8 @@ CREATE TABLE IF NOT EXISTS dmv_alerts (
     updated_at           TIMESTAMPTZ,
     created_at           TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Performance indexes
+CREATE INDEX IF NOT EXISTS idx_violations_plate_date ON violations(plate_id, plate_state, date_of_violation DESC);
+CREATE INDEX IF NOT EXISTS idx_violations_code ON violations(violation_code);
+CREATE INDEX IF NOT EXISTS idx_dmv_alerts_plate ON dmv_alerts(plate_id, created_at DESC);

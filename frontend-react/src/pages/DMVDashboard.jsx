@@ -306,7 +306,7 @@ function DMVDashboard() {
                     ))}
                   </div>
                   <div className="courts-list-section">
-                    <h4>Top Courts</h4>
+                    <h4>Top Ticket Issuers</h4>
                     {localCourts.top_courts?.slice(0, 5).map((c, i) => (
                       <div key={i} className="list-item">
                         <span className="item-name">{c.court}</span>
@@ -369,14 +369,15 @@ function DMVDashboard() {
                     <th>Crash Risk</th>
                     <th>Risk Factors</th>
                     <th>Last Seen</th>
-                    <th>Court</th>
+                    <th>Agency</th>
+                    <th>Ticket Issuer</th>
                     <th>Stage</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredQueue.length === 0 && (
-                    <tr><td colSpan="9" className="empty-queue">
+                    <tr><td colSpan="10" className="empty-queue">
                       <div className="empty-state">
                         <span className="empty-icon">📋</span>
                         <p className="empty-title">No drivers match this filter</p>
@@ -441,8 +442,13 @@ function DMVDashboard() {
                           <span className={`recency-badge ${recency.class}`}>{recency.label}</span>
                         </td>
                         <td>
-                          <span className={driver.jurisdiction_type === 'NYC_DOF' ? 'court-nyc' : 'court-local'}>
-                            {driver.jurisdiction_type === 'NYC_DOF' ? 'NYC DOF' : driver.court_name || 'Local'}
+                          <span className="agency-tag" title={driver.police_agency}>
+                            {driver.police_agency ? (driver.police_agency.length > 15 ? driver.police_agency.substring(0, 15) + '...' : driver.police_agency) : '—'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={driver.jurisdiction_type === 'NYC_DOF' ? 'court-nyc' : 'court-local'} title={driver.court_name || driver.ticket_issuer}>
+                            {driver.court_name || driver.ticket_issuer ? ((driver.court_name || driver.ticket_issuer).length > 15 ? (driver.court_name || driver.ticket_issuer).substring(0, 15) + '...' : (driver.court_name || driver.ticket_issuer)) : 'Local'}
                           </span>
                         </td>
                         <td>

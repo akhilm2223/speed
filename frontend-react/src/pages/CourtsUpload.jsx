@@ -87,7 +87,7 @@ function CourtsUpload() {
               <span className="col-tag">plate_id</span>
               <span className="col-tag">violation_code</span>
               <span className="col-tag">violation_date</span>
-              <span className="col-tag">court</span>
+              <span className="col-tag">ticket_issuer</span>
               <span className="col-tag">county</span>
               <span className="col-tag">police_agency</span>
               <span className="col-tag">disposition</span>

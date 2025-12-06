@@ -48,7 +48,10 @@ def get_ticket_issuer(primary_borough, court):
     """Determine ticket issuer based on location.
     NYC = Department of Finance, Outside NYC = Local Court
     
-    Note: Current dataset is NYC Open Data only - all records are NYC DOF.
+    Note: Current dataset is NYC Ope NYC DOF
+    if court:
+        return court
+    return "NYC Dept of Finance"n Data only - all records are NYC DOF.
     Statewide integration with 1,800 local courts requires NYS TSLED access.
     """
     if primary_borough:
@@ -59,10 +62,7 @@ def get_ticket_issuer(primary_borough, court):
         if court and 'TVB' in court.upper():
             return "NYC Dept of Finance"
     
-    # For real NYC Open Data, default to NYC DOF
-    if court:
-        return court
-    return "NYC Dept of Finance"
+    # For real NYC Open Data, default to
 
 
 def get_time_window_filter(policy: dict = ISA_POLICY):
@@ -196,12 +196,13 @@ def compute_driver_risk(conn, plate_id: str, registration_state: str = "NY", pol
         "high_tier_count": row[8],
         "low_tier_count": row[9],
         "primary_court": primary_court,
+        "court_name": court_name,
+        "ticket_issuer": primary_court,  # Use primary_court which comes from ticket_issuer column
         "status": status,
         "trigger_reason": trigger_reason,
         "crash_risk_score": crash_risk,
         "crash_risk_level": crash_risk_level,
         "jurisdiction_type": jurisdiction_type,
-        "court_name": court_name,
     }
 
 
@@ -244,9 +245,10 @@ def ensure_view_exists(policy: dict = ISA_POLICY):
                 WHERE EXTRACT(HOUR FROM date_of_violation) >= 22 
                    OR EXTRACT(HOUR FROM date_of_violation) < 4
             ) AS night_violations,
-            'NYC' AS primary_borough,
-            1 AS borough_count,
-            'NYC Dept of Finance' AS primary_court
+            COALESCE(MODE() WITHIN GROUP (ORDER BY v.ticket_issuer), 'Unknown') AS primary_borough,
+            COUNT(DISTINCT v.ticket_issuer) AS borough_count,
+            COALESCE(MODE() WITHIN GROUP (ORDER BY v.ticket_issuer), 'Local Court') AS primary_court,
+            COALESCE(MODE() WITHIN GROUP (ORDER BY v.police_agency), 'Unknown') AS primary_agency
         FROM violations v
         WHERE 
             v.plate_id NOT LIKE 'UNK%%'
@@ -327,18 +329,22 @@ def get_dashboard():
         cross_jurisdiction_count = 0
 
         # Enforcement queue: top 5000 drivers by risk
-        # Get driver license number from violations table (most recent)
+        # Use LATERAL JOIN for efficient driver license lookup
         cur.execute("""
             SELECT 
                 rv.plate_id, rv.registration_state, rv.violation_count, rv.risk_points,
                 rv.last_violation, rv.severe_count, rv.high_tier_count, rv.low_tier_count,
                 rv.night_violations, rv.primary_borough, rv.borough_count, rv.primary_court,
-                (SELECT driver_license_number FROM violations 
-                 WHERE plate_id = rv.plate_id AND plate_state = rv.registration_state 
-                 ORDER BY date_of_violation DESC LIMIT 1) as driver_license_number
-            FROM dmv_risk_view rv
-            ORDER BY rv.risk_points DESC
-            LIMIT 5000
+                latest_v.driver_license_number,
+                rv.primary_agency
+            FROM (
+                SELECT * FROM dmv_risk_view ORDER BY risk_points DESC LIMIT 5000
+            ) rv
+            LEFT JOIN LATERAL (
+                SELECT driver_license_number FROM violations 
+                WHERE plate_id = rv.plate_id AND plate_state = rv.registration_state 
+                ORDER BY date_of_violation DESC LIMIT 1
+            ) latest_v ON true
         """)
         
         all_drivers = []
@@ -375,6 +381,9 @@ def get_dashboard():
             is_cross_borough = borough_count >= 2
             is_night_heavy = (night_violations / violation_count) >= 0.5 if violation_count > 0 else False
             
+            # Get police_agency from row if available (index 13 after adding primary_agency)
+            police_agency = row[13] if len(row) > 13 else "Unknown"
+            
             all_drivers.append({
                 "plate_id": plate_id,
                 "driver_license_number": driver_license_number,
@@ -395,8 +404,9 @@ def get_dashboard():
                 "borough_count": borough_count,
                 "primary_court": primary_court,
                 "court_name": court_name,
+                "ticket_issuer": primary_court,  # Use primary_court which comes from ticket_issuer column
+                "police_agency": police_agency,
                 "jurisdiction_type": jurisdiction_type,
-                "ticket_issuer": get_ticket_issuer(primary_borough, primary_court),
                 "status": status,
                 "enforcement_status": "NEW",  # Default, will be updated from alerts
                 "is_cross_borough": is_cross_borough,
@@ -530,6 +540,7 @@ def get_driver(plate_id):
             "borough_count": risk["borough_count"],
             "is_cross_borough": risk["borough_count"] >= 2,
             "court_name": risk["court_name"],
+            "ticket_issuer": risk["court_name"],  # Use court_name which comes from ticket_issuer column
             "jurisdiction_type": risk["jurisdiction_type"],
             "status": risk["status"],
             "trigger_reason": risk["trigger_reason"],
@@ -847,31 +858,85 @@ def get_local_courts_summary():
     """
     Get summary of statewide local courts data.
     Powers the Local Courts Adapter UI panel.
-    Note: Current schema doesn't have county/court/agency columns - returning placeholder data.
+    Uses ticket_issuer and police_agency columns from violations table.
     """
     try:
         conn = get_db()
         cur = conn.cursor()
         
-        # Get total violations count
-        cur.execute("SELECT COUNT(*) FROM violations")
-        total_violations = cur.fetchone()[0]
+        # Get unique counts
+        cur.execute("SELECT COUNT(DISTINCT ticket_issuer) FROM violations WHERE ticket_issuer IS NOT NULL")
+        unique_courts = cur.fetchone()[0] or 0
+        
+        cur.execute("SELECT COUNT(DISTINCT police_agency) FROM violations WHERE police_agency IS NOT NULL")
+        unique_agencies = cur.fetchone()[0] or 0
+        
+        # Top ticket issuers by violation count
+        cur.execute("""
+            SELECT ticket_issuer, COUNT(*) as cnt 
+            FROM violations 
+            WHERE ticket_issuer IS NOT NULL 
+            GROUP BY ticket_issuer 
+            ORDER BY cnt DESC 
+            LIMIT 10
+        """)
+        top_courts = [{"court": r[0], "count": r[1]} for r in cur.fetchall()]
+        
+        # Top police agencies
+        cur.execute("""
+            SELECT police_agency, COUNT(*) as cnt 
+            FROM violations 
+            WHERE police_agency IS NOT NULL 
+            GROUP BY police_agency 
+            ORDER BY cnt DESC 
+            LIMIT 10
+        """)
+        top_agencies = [{"police_agency": r[0], "count": r[1]} for r in cur.fetchall()]
+        
+        # Derive counties from ticket_issuer names (simple extraction)
+        cur.execute("""
+            SELECT ticket_issuer, COUNT(*) as cnt 
+            FROM violations 
+            WHERE ticket_issuer IS NOT NULL 
+            GROUP BY ticket_issuer 
+            ORDER BY cnt DESC
+        """)
+        issuer_counts = cur.fetchall()
+        
+        # Extract county from ticket_issuer name (e.g., "SUFFOLK COUNTY TPVA" -> "SUFFOLK")
+        county_counts = {}
+        for issuer_name, count in issuer_counts:
+            if issuer_name:
+                parts = issuer_name.upper().split()
+                if 'COUNTY' in parts:
+                    idx = parts.index('COUNTY')
+                    if idx > 0:
+                        county = parts[idx - 1]
+                        county_counts[county] = county_counts.get(county, 0) + count
+                elif 'NYC' in issuer_name.upper() or 'NEW YORK' in issuer_name.upper():
+                    county_counts['NYC'] = county_counts.get('NYC', 0) + count
+                else:
+                    # Use first word as county approximation
+                    county = parts[0] if parts else 'Unknown'
+                    county_counts[county] = county_counts.get(county, 0) + count
+        
+        top_counties = [{"county": k, "count": v} for k, v in sorted(county_counts.items(), key=lambda x: x[1], reverse=True)[:10]]
+        unique_counties = len(county_counts)
         
         cur.close()
         conn.close()
         
-        # Return placeholder data since schema doesn't have county/court columns
         return jsonify({
-            "unique_counties": 1,
-            "unique_courts": 1,
-            "unique_police_agencies": 1,
-            "top_counties": [{"county": "NYC", "count": total_violations}],
-            "top_courts": [{"court": "NYC Dept of Finance", "count": total_violations}],
-            "top_agencies": [{"police_agency": "NYPD", "count": total_violations}],
-            "all_counties": ["NYC"],
-            "all_courts": ["NYC Dept of Finance"],
-            "all_agencies": ["NYPD"],
-            "message": f"Local Courts Adapter: {total_violations:,} violations from NYC"
+            "unique_counties": unique_counties,
+            "unique_courts": unique_courts,
+            "unique_police_agencies": unique_agencies,
+            "top_counties": top_counties,
+            "top_courts": top_courts,
+            "top_agencies": top_agencies,
+            "all_counties": list(county_counts.keys()),
+            "all_courts": [c["court"] for c in top_courts],
+            "all_agencies": [a["police_agency"] for a in top_agencies],
+            "message": f"Local Courts Adapter: {unique_courts} ticket issuers, {unique_agencies} agencies, {unique_counties} counties"
         })
         
     except Exception as e:
@@ -881,47 +946,122 @@ def get_local_courts_summary():
 @dmv_bp.route('/local-courts/upload', methods=['POST'])
 def upload_local_court_csv():
     """
-    Upload CSV from local courts (demo endpoint).
-    Validates CSV schema and returns success.
+    Upload CSV from local courts.
+    Parses and inserts violation data into the database.
     """
     try:
-        # For demo, just validate the request
         if 'file' not in request.files:
-            # Accept JSON body for demo
-            data = request.json or {}
-            return jsonify({
-                "success": True,
-                "message": "CSV upload endpoint ready",
-                "expected_columns": [
-                    "plate_id", "violation_code", "violation_date",
-                    "court", "county", "police_agency", "disposition"
-                ],
-                "demo_mode": True
-            })
+            return jsonify({"error": "No file selected"}), 400
         
         file = request.files['file']
         if file.filename == '':
             return jsonify({"error": "No file selected"}), 400
         
-        # Read first few lines to validate
+        # Parse CSV
         import csv
         import io
+        from datetime import datetime
+        
         content = file.read().decode('utf-8')
         reader = csv.DictReader(io.StringIO(content))
         
-        rows = []
-        for i, row in enumerate(reader):
-            if i >= 10:
-                break
-            rows.append(row)
+        rows = list(reader)
+        if not rows:
+            return jsonify({"error": "Empty CSV file"}), 400
+            
+        conn = get_db()
+        cur = conn.cursor()
+        
+        inserted_count = 0
+        error_count = 0
+        
+        # Detect format (simple vs full)
+        headers = rows[0].keys()
+        is_full_format = 'driver_license_number' in headers
+        
+        print(f"Processing upload: {len(rows)} rows, Full Format: {is_full_format}")
+        
+        for row in rows:
+            try:
+                # Handle different date formats
+                violation_date_str = row.get('violation_date') or row.get('date_of_violation')
+                try:
+                    if 'T' in violation_date_str:
+                        violation_date = datetime.fromisoformat(violation_date_str.replace('Z', ''))
+                    else:
+                        violation_date = datetime.strptime(violation_date_str, '%Y-%m-%d %H:%M:%S')
+                except:
+                    # Fallback try other format
+                    try:
+                        violation_date = datetime.strptime(violation_date_str, '%Y-%m-%d')
+                    except:
+                        violation_date = datetime.now() # Fallback
+                
+                # Extract or Default other fields
+                plate_id = row.get('plate_id', '').strip().upper()
+                if not plate_id: continue
+                
+                plate_state = row.get('plate_state') or row.get('registration_state') or "NY"
+                violation_code = row.get('violation_code') or "1180D"
+                
+                if is_full_format:
+                    # Use all fields if available
+                    driver_license = row.get('driver_license_number')
+                    driver_name = row.get('driver_full_name')
+                    dob = row.get('date_of_birth')
+                    license_state = row.get('license_state', 'NY')
+                    disposition = row.get('disposition', 'GUILTY')
+                    lat = row.get('latitude', 0)
+                    lng = row.get('longitude', 0)
+                    police_agency = row.get('police_agency', 'Unknown')
+                    ticket_issuer = row.get('court') or row.get('ticket_issuer', 'Unknown')
+                else:
+                    # Defaults for simple format
+                    driver_license = "UNKNOWN"
+                    driver_name = "UNKNOWN" 
+                    dob = "1980-01-01"
+                    license_state = "NY"
+                    disposition = row.get('disposition', 'GUILTY')
+                    lat = 0
+                    lng = 0
+                    police_agency = row.get('police_agency', 'Local Police')
+                    ticket_issuer = row.get('court') or row.get('ticket_issuer', 'Local Court')
+
+                # Insert into DB
+                cur.execute("""
+                    INSERT INTO violations (
+                        driver_license_number, driver_full_name, date_of_birth, license_state,
+                        plate_id, plate_state, violation_code, date_of_violation,
+                        disposition, latitude, longitude,
+                        police_agency, ticket_issuer, source_type
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'local_court_upload')
+                """, (
+                    driver_license, driver_name, dob, license_state,
+                    plate_id, plate_state, violation_code, violation_date,
+                    disposition, lat, lng,
+                    police_agency, ticket_issuer
+                ))
+                
+                inserted_count += 1
+                
+            except Exception as e:
+                print(f"Error row {inserted_count}: {e}")
+                if error_count == 0:
+                    first_error = str(e)
+                error_count += 1
+                continue
+        
+        conn.commit()
+        cur.close()
+        conn.close()
         
         return jsonify({
             "success": True,
             "filename": file.filename,
-            "columns_detected": list(rows[0].keys()) if rows else [],
-            "preview_rows": rows,
-            "total_preview": len(rows),
-            "message": "CSV validated successfully. Ready for import."
+            "inserted": inserted_count,
+            "errors": error_count,
+            "first_error": first_error if error_count > 0 else None,
+            "message": f"Successfully imported {inserted_count} violations."
         })
         
     except Exception as e:

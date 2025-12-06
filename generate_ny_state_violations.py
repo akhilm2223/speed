@@ -32,6 +32,7 @@ import csv
 import os
 import random
 import string
+import time
 from datetime import datetime, timedelta, date
 from pathlib import Path
 
@@ -182,19 +183,6 @@ def normalize_state(state_name):
     return STATE_ABBREV.get(state_upper, "NY")
 
 
-def get_violation_description(code):
-    """Get description for violation code."""
-    descriptions = {
-        "1180A": "Speed in Zone - 1-10 MPH Over",
-        "1180B": "Speed in Zone - 11-20 MPH Over",
-        "1180C": "Speed in Zone - 21-30 MPH Over",
-        "1180D": "Speed in Zone - 31+ MPH Over",
-        "1180E": "Speed in School Zone",
-        "1180F": "Speed in Work Zone",
-    }
-    return descriptions.get(code, "Speeding Violation")
-
-
 # =============================================================================
 # FETCH DATA FROM NY STATE API
 # =============================================================================
@@ -234,7 +222,8 @@ def fetch_violations_from_api(target_violations, app_token=None):
     print(f"{'='*70}")
     print(f"\nFetching violations from NY State Open Data JSON API...")
     print(f"  URL: {NY_STATE_API_URL}")
-    print(f"  Target: {target_violations:,} records")
+    print(f"  Target: {target_violations:,} records (excluding NYC Police Department)")
+    print(f"  Note: NYC records are filtered out (handled by ingest.py)")
     if app_token:
         print(f"  Using SODA3 API with app token (higher rate limits)")
     print()
@@ -291,7 +280,6 @@ def fetch_violations_from_api(target_violations, app_token=None):
                 if retry_count < max_retries:
                     wait_time = 2 ** retry_count  # Exponential backoff: 2s, 4s, 8s
                     print(f"\n    Connection error (attempt {retry_count}/{max_retries}), retrying in {wait_time}s...", end=" ", flush=True)
-                    import time
                     time.sleep(wait_time)
                     continue
                 else:
@@ -309,10 +297,25 @@ def fetch_violations_from_api(target_violations, app_token=None):
             print("No more data.")
             break
         
-        all_data.extend(rows)
-        print(f"got {len(rows):,} (total: {len(all_data):,})")
+        # Filter out NYC Police Department records (those are handled by ingest.py)
+        filtered_rows = []
+        for row in rows:
+            police_agency = (row.get("police_agency") or "").upper().strip()
+            # Skip NYC police agencies (NYC POLICE DEPT)
+            if ("NYC POLICE DEPT" in police_agency):
+                continue
+            filtered_rows.append(row)
+        
+        all_data.extend(filtered_rows)
+        skipped = len(rows) - len(filtered_rows)
+        print(f"got {len(rows):,} (kept: {len(filtered_rows):,}, skipped NYC: {skipped}, total: {len(all_data):,})")
+        
+        # Continue fetching if we need more records (accounting for filtering)
+        if len(all_data) >= target_violations:
+            break
         
         if len(rows) < BATCH_SIZE:
+            print("No more data available.")
             break
         
         offset += BATCH_SIZE
@@ -340,7 +343,8 @@ def process_violations(raw_data, coordinates):
     random.shuffle(coordinates)
     
     violations = []
-    plate_pool = []  # For repeat offenders
+    plate_pool = []  # For repeat offender plates
+    driver_pool = []  # For repeat offender drivers: [(license, name, dob, state), ...]
     
     # Track statistics for summary
     county_stats = {}
@@ -367,32 +371,32 @@ def process_violations(raw_data, coordinates):
         
         # CRITICAL STATEWIDE FIELDS
         police_agency = row.get("police_agency", "NYS Police").strip()
-        court = row.get("court", "Local Court").strip()
+        ticket_issuer = row.get("court", "Local Court").strip()  # API uses "court" field
         
-        # Derive county from court name (e.g., "Albany City Court" -> "Albany")
+        # Derive county from ticket_issuer name (e.g., "Albany City Court" -> "Albany")
         county = "Unknown"
-        if court:
-            # Extract county from court name
-            court_parts = court.split()
-            if len(court_parts) > 0:
+        if ticket_issuer:
+            # Extract county from ticket_issuer name
+            issuer_parts = ticket_issuer.split()
+            if len(issuer_parts) > 0:
                 # Common patterns: "Albany City Court", "Suffolk County Court", "NYC TVB"
-                if "County" in court:
+                if "County" in ticket_issuer:
                     # Find word before "County"
-                    idx = court_parts.index("County")
+                    idx = issuer_parts.index("County")
                     if idx > 0:
-                        county = court_parts[idx - 1]
-                elif "City" in court:
+                        county = issuer_parts[idx - 1]
+                elif "City" in ticket_issuer:
                     # Use first word as county
-                    county = court_parts[0]
-                elif "NYC" in court or "Manhattan" in court or "Brooklyn" in court:
+                    county = issuer_parts[0]
+                elif "NYC" in ticket_issuer or "Manhattan" in ticket_issuer or "Brooklyn" in ticket_issuer:
                     county = "NYC"
                 else:
-                    county = court_parts[0]
+                    county = issuer_parts[0]
         
         # Track stats
         county_stats[county] = county_stats.get(county, 0) + 1
         police_agency_stats[police_agency] = police_agency_stats.get(police_agency, 0) + 1
-        court_stats[court] = court_stats.get(court, 0) + 1
+        court_stats[ticket_issuer] = court_stats.get(ticket_issuer, 0) + 1
         
         # Parse year/month for date_of_violation
         try:
@@ -411,14 +415,19 @@ def process_violations(raw_data, coordinates):
         except (ValueError, TypeError):
             age = random.randint(18, 65)
         
-        # Generate driver information
-        driver_license_number = generate_driver_license_number()
-        driver_full_name = generate_driver_name()
-        date_of_birth = generate_date_of_birth(age)
-        
-        # Generate date of conviction (30-90 days after violation)
-        conviction_days = random.randint(30, 90)
-        date_of_conviction = date_of_violation + timedelta(days=conviction_days)
+        # Generate or reuse driver information (5% chance to reuse existing driver)
+        if driver_pool and random.random() < 0.05:
+            # Reuse existing driver (repeat offender)
+            driver_license_number, driver_full_name, date_of_birth, _ = random.choice(driver_pool)
+        else:
+            # Generate new driver
+            driver_license_number = generate_driver_license_number()
+            driver_full_name = generate_driver_name()
+            date_of_birth = generate_date_of_birth(age)
+            # Add to pool for potential reuse
+            driver_pool.append((driver_license_number, driver_full_name, date_of_birth, state_of_license))
+            if len(driver_pool) > 1000:
+                driver_pool = driver_pool[-500:]  # Keep last 500 to maintain some repeat offenders
         
         # Generate disposition (match ingest.py)
         disposition_options = ["GUILTY", "NOT GUILTY", "DISMISSED"]
@@ -433,10 +442,12 @@ def process_violations(raw_data, coordinates):
             "plate_state": state_of_license,
             "violation_code": violation_code,
             "date_of_violation": date_of_violation,
-            "date_of_conviction": date_of_conviction,
             "disposition": disposition,
             "latitude": lat,
             "longitude": lon,
+            "police_agency": police_agency,
+            "ticket_issuer": ticket_issuer,
+            "source_type": "ny_state_api",
         }
         violations.append(violation)
         
@@ -537,12 +548,14 @@ def save_to_database(violations):
                 INSERT INTO violations (
                     driver_license_number, driver_full_name, date_of_birth, license_state,
                     plate_id, plate_state, violation_code, date_of_violation,
-                    date_of_conviction, disposition, latitude, longitude
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    disposition, latitude, longitude,
+                    police_agency, ticket_issuer, source_type
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 v["driver_license_number"], v["driver_full_name"], v["date_of_birth"], v["license_state"],
                 v["plate_id"], v["plate_state"], v["violation_code"], v["date_of_violation"],
-                v["date_of_conviction"], v["disposition"], v["latitude"], v["longitude"]
+                v["disposition"], v["latitude"], v["longitude"],
+                v["police_agency"], v["ticket_issuer"], v["source_type"]
             ))
         conn.commit()
         inserted += len(batch)
@@ -598,19 +611,9 @@ def save_to_database(violations):
 # =============================================================================
 
 def main():
-    import time
-    
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description="Fetch NY State traffic violations from data.ny.gov JSON API",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Fetch 500k violations (default)
-  python generate_ny_state_violations.py
-  
-
-        """
+        description="Fetch NY State traffic violations from data.ny.gov JSON API"
     )
     parser.add_argument(
         "--limit", 

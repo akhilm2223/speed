@@ -529,14 +529,9 @@ function MapView() {
                   📅 {new Date(selectedViolation.date).toLocaleDateString()} {new Date(selectedViolation.date).toLocaleTimeString()}
                 </div>
               )}
-              {selectedViolation.agency && (
+              {selectedViolation.police_agency && (
                 <div className="violation-tooltip-line">
-                  👮 {selectedViolation.agency}
-                </div>
-              )}
-              {selectedViolation.court && (
-                <div className="violation-tooltip-line">
-                  ⚖️ {selectedViolation.court}
+                  👮 {selectedViolation.police_agency}
                 </div>
               )}
             </div>

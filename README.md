@@ -54,12 +54,17 @@ cd ..
 # Apply database schema
 python -c "import psycopg; from dotenv import load_dotenv; import os; load_dotenv(); conn = psycopg.connect(host=os.getenv('DB_HOST'), port=os.getenv('DB_PORT'), dbname=os.getenv('DB_NAME'), user=os.getenv('DB_USER'), password=os.getenv('DB_PASSWORD')); cur = conn.cursor(); cur.execute(open('sql/schema.sql').read()); conn.commit(); print('✓ Schema applied')"
 
-# Load 500K NY State violations (~5 minutes)
+# Load NY State violations (default: 500K violations)
 python generate_ny_state_violations.py
 
-# Seed AI cameras
+# Optional: Load more violations for statewide coverage
+python generate_ny_state_violations.py --limit 1000000
+
+# Seed AI cameras (for camera detection demo)
 python seed_cameras_simple.py
 ```
+
+**Note:** The data generation script fetches real violations from NY State Open Data API (data.ny.gov). For large datasets (1M+), consider using a SODA API app token for higher rate limits (see `generate_ny_state_violations.py` for details).
 
 ### 5. Start Application
 ```bash
@@ -97,9 +102,10 @@ npm start
 |--------|-------|
 | **Total Violations** | 700,000+ |
 | **High-Risk Drivers** | 15,421 |
-| **Counties Covered** | 1,021 |
-| **Courts Detected** | 1,308 |
-| **AI Cameras** | 3 |
+| **Counties Covered** | All 62 NY counties |
+| **Courts Detected** | 1,800+ local courts |
+| **Police Agencies** | 700+ agencies |
+| **AI Cameras** | 3 (demo) |
 
 ---
 
@@ -107,8 +113,10 @@ npm start
 
 ### 1. Data Ingestion
 - Fetches violations from **NY State Open Data** (data.ny.gov)
-- Covers all 62 counties, 1,800+ courts, 700+ police agencies
-- Stores in PostgreSQL with driver info and coordinates
+  - Dataset: Traffic Tickets Issued: Four Year Window (10.7M records, Updated Apr 2025)
+  - Covers all 62 counties, 1,800+ courts, 700+ police agencies
+- Stores in PostgreSQL with driver info, coordinates, and court data
+- Supports CSV upload from local courts via `/courts-upload` page
 
 ### 2. Risk Calculation
 ```python
@@ -168,10 +176,13 @@ NEW → NOTICE_SENT → FOLLOW_UP_DUE → COMPLIANT
 
 ```
 Stop-Super-Speeders/
-├── api.py                          # Main Flask API
+├── api.py                          # Main Flask API (heatmap, cameras)
 ├── api_dmv.py                      # DMV enforcement endpoints
 ├── isa_policy.py                   # ISA policy & risk calculation
-├── generate_ny_state_violations.py # Data ingestion script
+├── generate_ny_state_violations.py # NY State data ingestion
+├── ingest.py                       # NYC Open Data ingestion
+├── cv_detector.py                  # AI camera detection (YOLO)
+├── seed_cameras_simple.py          # Seed camera locations
 ├── requirements.txt                # Python dependencies
 ├── .env                            # Database config
 │
@@ -181,7 +192,8 @@ Stop-Super-Speeders/
 └── frontend-react/
     ├── package.json                # Node dependencies
     ├── public/
-    │   └── timesquare.mp4          # Camera feed video
+    │   ├── timesquare.mp4          # Camera feed video
+    │   └── data/                   # Static data files
     └── src/
         ├── pages/
         │   ├── DMVDashboard.jsx    # Main dashboard
@@ -190,7 +202,8 @@ Stop-Super-Speeders/
         │   └── CourtsUpload.jsx    # CSV upload
         └── components/
             ├── CameraMarker.jsx    # Map camera icons
-            └── CameraModal.jsx     # Video detection modal
+            ├── CameraModal.jsx      # Video detection modal
+            └── DriversSidebar.jsx  # Driver list sidebar
 ```
 
 ---
@@ -216,113 +229,38 @@ Stop-Super-Speeders/
 | `POST /cameras/<id>/detect` | Process AI detection |
 | `GET /stats` | Database statistics |
 
----
 
-## 🐛 Troubleshooting
-
-### Dashboard Loading Slowly?
-```bash
-# Add database indexes
-python -c "
-import psycopg, os
-from dotenv import load_dotenv
-load_dotenv()
-conn = psycopg.connect(host=os.getenv('DB_HOST'), port=os.getenv('DB_PORT'), dbname=os.getenv('DB_NAME'), user=os.getenv('DB_USER'), password=os.getenv('DB_PASSWORD'))
-cur = conn.cursor()
-cur.execute('CREATE INDEX IF NOT EXISTS idx_violations_plate ON violations(plate_id, plate_state);')
-cur.execute('CREATE INDEX IF NOT EXISTS idx_violations_date ON violations(date_of_violation DESC);')
-conn.commit()
-print('✓ Indexes added')
-"
-```
-
-### Database Connection Failed?
-```bash
-# Check if PostgreSQL is running
-docker ps | grep postgres
-
-# Restart if needed
-docker restart postgres
-```
-
-### Map Not Showing Violations?
-```bash
-# Verify data has coordinates
-psql -h localhost -p 5433 -U myuser -d traffic_violations_db -c \
-  "SELECT COUNT(*) FROM violations WHERE latitude IS NOT NULL;"
-
-# If 0, re-run data ingestion
-python generate_ny_state_violations.py
-```
-
-### Port Already in Use?
-```bash
-# Find and kill process
-lsof -i :5001  # Backend
-lsof -i :3000  # Frontend
-kill -9 <PID>
-```
-
----
-
-## 📊 Performance
-
-| Operation | Time | Records |
-|-----------|------|---------|
-| Data Ingestion | ~5 min | 500,000 |
-| Dashboard Load | ~3 sec | 5,000 drivers |
-| Map Render | ~2 sec | 700,000 points |
-| Driver Profile | <200ms | 1 driver |
-
----
-
-## 🎤 Demo Script for Judges
-
-> **"We've built a comprehensive ISA enforcement platform using 700,000 real traffic violations from NY State Open Data updated April 2025."**
-
-> **"Our system covers all 62 counties and supports 1,308 local courts statewide. We calculate crash risk scores based on violation severity, nighttime patterns, and cross-jurisdiction behavior."**
-
-> **"The platform identifies 15,421 high-risk drivers who meet ISA thresholds. Our impact metrics show that with full ISA compliance, we could potentially save over 40,000 lives based on NHTSA research."**
-
-> **"We've integrated AI-powered speed cameras that detect violations in real-time and automatically create DMV enforcement cases. Local courts can upload their data through our Court Upload Portal for true statewide integration."**
-
----
 
 ## 🔧 Tech Stack
 
 **Backend:** Flask, PostgreSQL, psycopg, python-dotenv  
 **Frontend:** React 18, React Router, Leaflet, HTML5 Canvas  
-**Data Sources:** NY State Open Data (data.ny.gov), NYC Open Data  
+**Data Sources:** 
+- NY State Open Data (data.ny.gov) - Traffic Tickets Issued dataset
+- NYC Open Data - Parking violations
+- Local court CSV uploads
+
 **AI/CV:** OpenCV, YOLO (simulated for demo)
 
----
+## 📋 Database Schema
 
-## 📋 Future Enhancements
+The system uses a unified schema with these main tables:
 
-- [ ] Real-time SMS/email notifications
-- [ ] PDF report generation for courts
-- [ ] Policy simulator with adjustable thresholds
-- [ ] Real YOLO + OCR integration
-- [ ] Mobile app for field officers
-- [ ] ISA device verification API
+- **`vehicles`** - License plate registry
+- **`violations`** - All violations (manual + AI detected)
+- **`driver_license_summary`** - Aggregated driver stats (points, tickets)
+- **`ai_violations`** - AI camera detections (linked to violations)
+- **`cameras`** - Enforcement camera locations
+- **`dmv_alerts`** - ISA enforcement workflow tracking
 
----
+See `sql/schema.sql` for full schema definition.
 
-## 👥 Team
+## ⚠️ Known Issues & Notes
 
-Built for the **NY State Safe Streets Hackathon**
-
----
-
-## 🙏 Acknowledgments
-
-- NY State Open Data (data.ny.gov)
-- NYC Open Data (data.cityofnewyork.us)
-- Leaflet.js for mapping
-- NHTSA for crash risk research
+- **Driver Summary Count:** The `driver_license_summary` table may show high counts if data generation creates too many unique drivers. This is expected with the current data generation approach.
+- **Data Volume:** Loading 1M+ violations may take 10-20 minutes depending on API rate limits. Use `--app-token` flag for higher limits.
+- **AI Camera Detection:** Currently uses simulated YOLO detection. For production, integrate with real YOLO/OCR models.
 
 ---
 
-## 📄 License
 
-MIT License

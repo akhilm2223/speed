@@ -101,7 +101,7 @@ def get_heatmap():
         # Use columns that actually exist in schema.sql
         cur.execute("""
             SELECT latitude, longitude, violation_code, 
-                   date_of_violation, plate_id, plate_state
+                   date_of_violation, plate_id, plate_state, police_agency
             FROM violations
             WHERE latitude IS NOT NULL AND longitude IS NOT NULL
             LIMIT %s
@@ -131,7 +131,7 @@ def get_heatmap():
 
         points = []
         for row in cur:
-            lat, lon, violation_code, date_of_violation, plate_id, plate_state = row
+            lat, lon, violation_code, date_of_violation, plate_id, plate_state, police_agency = row
             
             if lat is not None and lon is not None and lat != 0 and lon != 0:
                 severity = get_severity_from_code(violation_code)
@@ -145,8 +145,7 @@ def get_heatmap():
                     'plate': plate_id,
                     'state': plate_state,
                     'location': f"({lat}, {lon})",
-                    'agency': "NYC DOF", # Placeholder
-                    'court': "NYC Traffic Court" # Placeholder
+                    'police_agency': police_agency or "Unknown"
                 })
 
         cur.close()
