@@ -122,7 +122,7 @@ def get_stats():
             GROUP BY v.plate_id, v.registration_state
             HAVING COUNT(vio.violation_id) > 0
             ORDER BY violation_count DESC
-            LIMIT 10
+            LIMIT 200
         """)
         
         top_violators = [{"plate_id": r[0], "registration_state": r[1], "count": r[2]} for r in cur]
@@ -148,20 +148,49 @@ def get_stats():
 
 @app.route('/api/heatmap')
 def get_heatmap():
-    """Get heatmap points from violations with coordinates."""
+    """Get heatmap points from violations with coordinates and severity."""
     try:
-        limit = request.args.get('limit', 50000, type=int)
+        limit = request.args.get('limit', 300000, type=int)
         conn = get_db()
         cur = conn.cursor()
         
         cur.execute("""
-            SELECT violation_location FROM violations
+            SELECT violation_location, violation_code, violation_description, 
+                   issue_date, plate_id, registration_state
+            FROM violations
             WHERE violation_location IS NOT NULL LIMIT %s
         """, (limit,))
+        
+        def get_severity_from_code(code):
+            """Map violation code to severity intensity (0.0-1.0)."""
+            if not code:
+                return 0.3
+            code_str = str(code).strip().upper()
+            # 1180A = 1-10 mph (low) -> 0.3
+            # 1180B = 11-20 mph (moderate) -> 0.5
+            # 1180C = 21-30 mph (high) -> 0.7
+            # 1180D = 31+ mph (severe) -> 0.9
+            if code_str == '1180A':
+                return 0.3
+            elif code_str == '1180B':
+                return 0.5
+            elif code_str == '1180C':
+                return 0.7
+            elif code_str == '1180D':
+                return 0.9
+            elif code_str in ('1180E', '1180F'):  # School/Work zones
+                return 0.8
+            else:
+                return 0.4  # Default for other 1180 codes
         
         points = []
         for row in cur:
             location = row[0]
+            violation_code = row[1]
+            violation_description = row[2]
+            issue_date = row[3]
+            plate_id = row[4]
+            registration_state = row[5]
             if not location:
                 continue
             match = re.search(r'\(\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\s*\)', location)
@@ -169,7 +198,19 @@ def get_heatmap():
                 try:
                     lat, lon = float(match.group(1)), float(match.group(2))
                     if lat != 0 and lon != 0:
-                        points.append([lat, lon, 0.5])
+                        severity = get_severity_from_code(violation_code)
+                        # Return as object with all details
+                        points.append({
+                            'lat': lat,
+                            'lon': lon,
+                            'severity': severity,
+                            'code': violation_code,
+                            'description': violation_description,
+                            'date': issue_date.isoformat() if issue_date else None,
+                            'plate': plate_id,
+                            'state': registration_state,
+                            'location': location
+                        })
                 except ValueError:
                     continue
         

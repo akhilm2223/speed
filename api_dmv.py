@@ -82,7 +82,7 @@ def get_dashboard():
         conn = get_db()
         cur = conn.cursor()
         
-        # Get all drivers from enhanced risk view (ALL data Jan-Sep 2025)
+        # Get top 200 drivers from enhanced risk view (ALL data Jan-Sep 2025)
         cur.execute("""
             SELECT 
                 plate_id, registration_state, violation_count, risk_points,
@@ -90,6 +90,7 @@ def get_dashboard():
                 night_violations, primary_borough, borough_count
             FROM dmv_risk_view
             ORDER BY risk_points DESC
+            LIMIT 200
         """)
         
         all_drivers = []

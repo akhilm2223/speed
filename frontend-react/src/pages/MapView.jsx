@@ -12,25 +12,228 @@ const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5001';
 const NYC_CENTER = [40.7128, -74.0060];
 const DEFAULT_ZOOM = 11;
 
-function HeatmapLayer({ points }) {
+// High-performance Canvas-based layer for 100k+ points
+function ViolationLayer({ points, onPointClick, onPointsDrawn }) {
   const map = useMap();
-  const heatLayerRef = useRef(null);
+  const canvasRef = useRef(null);
+  const layerRef = useRef(null);
+  const pointsRef = useRef([]);
 
   useEffect(() => {
     if (!points || points.length === 0) return;
-    if (heatLayerRef.current) map.removeLayer(heatLayerRef.current);
+    if (layerRef.current) map.removeLayer(layerRef.current);
+    
+    // Store points for click detection
+    pointsRef.current = points;
 
-    const heatLayer = L.heatLayer(points, {
-      radius: 25, blur: 20, maxZoom: 17, max: 1.0, minOpacity: 0.4,
-      gradient: {
-        0.0: '#000000', 0.2: '#4a0000', 0.4: '#ff4500',
-        0.6: '#ff6600', 0.8: '#ff8c00', 1.0: '#ffcc00'
+    // Create custom Canvas layer for high performance
+    const CanvasLayer = L.Layer.extend({
+      onAdd: function(map) {
+        this._map = map;
+        this._lastThrottle = 0;
+        this._canvas = L.DomUtil.create('canvas', 'leaflet-canvas-layer');
+        const size = map.getSize();
+        this._canvas.width = size.x;
+        this._canvas.height = size.y;
+        this._canvas.style.position = 'absolute';
+        this._canvas.style.top = '0';
+        this._canvas.style.left = '0';
+        this._canvas.style.pointerEvents = 'auto';
+        this._canvas.style.cursor = 'pointer';
+        
+        // Click handler
+        L.DomEvent.on(this._canvas, 'click', this._onClick, this);
+        
+        map.getPanes().overlayPane.appendChild(this._canvas);
+        map.on('move', this._throttledReset, this);
+        map.on('moveend', this._reset, this);
+        map.on('zoom', this._throttledReset, this);
+        map.on('zoomend', this._reset, this);
+        map.on('resize', this._resize, this);
+        this._reset();
+      },
+
+      onRemove: function(map) {
+        L.DomEvent.off(this._canvas, 'click', this._onClick, this);
+        map.getPanes().overlayPane.removeChild(this._canvas);
+        map.off('move', this._throttledReset, this);
+        map.off('moveend', this._reset, this);
+        map.off('zoom', this._throttledReset, this);
+        map.off('zoomend', this._reset, this);
+        map.off('resize', this._resize, this);
+      },
+
+      _onClick: function(e) {
+        const containerPoint = L.DomUtil.getPosition(this._canvas);
+        const clickPoint = {
+          x: e.offsetX,
+          y: e.offsetY
+        };
+        
+        const clickLatLng = this._map.containerPointToLatLng([
+          clickPoint.x + containerPoint.x,
+          clickPoint.y + containerPoint.y
+        ]);
+        
+        // Find nearest point within threshold
+        const zoom = this._map.getZoom();
+        const clickThreshold = zoom >= 15 ? 8 : zoom >= 13 ? 6 : zoom >= 11 ? 4 : 3;
+        let nearestPoint = null;
+        let nearestPointXY = null;
+        let minDistance = Infinity;
+        
+        const bounds = this._map.getBounds();
+        const minLat = bounds.getSouth();
+        const maxLat = bounds.getNorth();
+        const minLng = bounds.getWest();
+        const maxLng = bounds.getEast();
+        
+        for (const point of pointsRef.current) {
+          const lat = point.lat || point[0];
+          const lon = point.lon || point[1];
+          
+          // Quick bounds check
+          if (lat < minLat || lat > maxLat || lon < minLng || lon > maxLng) continue;
+          
+          const pointXY = this._map.latLngToContainerPoint([lat, lon]);
+          const distance = Math.sqrt(
+            Math.pow(pointXY.x - (clickPoint.x + containerPoint.x), 2) +
+            Math.pow(pointXY.y - (clickPoint.y + containerPoint.y), 2)
+          );
+          
+          if (distance < clickThreshold && distance < minDistance) {
+            minDistance = distance;
+            nearestPoint = point;
+            nearestPointXY = pointXY;
+          }
+        }
+        
+        if (nearestPoint && onPointClick) {
+          // Pass the screen position for popup placement
+          onPointClick(nearestPoint, nearestPointXY);
+        }
+        
+        L.DomEvent.stopPropagation(e);
+      },
+
+      _throttledReset: function() {
+        const now = Date.now();
+        if (now - this._lastThrottle < 50) return; // Throttle to max 20fps during movement
+        this._lastThrottle = now;
+        this._reset();
+      },
+
+      _resize: function() {
+        const size = this._map.getSize();
+        this._canvas.width = size.x;
+        this._canvas.height = size.y;
+        this._reset();
+      },
+
+      _reset: function() {
+        const topLeft = this._map.containerPointToLayerPoint([0, 0]);
+        L.DomUtil.setPosition(this._canvas, topLeft);
+        this._draw();
+      },
+
+      _draw: function() {
+        const startTime = performance.now();
+        const ctx = this._canvas.getContext('2d');
+        const size = this._map.getSize();
+        ctx.clearRect(0, 0, size.x, size.y);
+
+        const zoom = this._map.getZoom();
+        const bounds = this._map.getBounds();
+        
+        // Adjust point size based on zoom
+        const baseSize = zoom >= 15 ? 4 : zoom >= 13 ? 3 : zoom >= 11 ? 2 : 1.5;
+        
+        // Performance optimization: pre-calculate bounds for faster filtering
+        const minLat = bounds.getSouth();
+        const maxLat = bounds.getNorth();
+        const minLng = bounds.getWest();
+        const maxLng = bounds.getEast();
+        
+        // At low zoom levels, sample points to improve performance
+        const sampleRate = zoom < 11 ? 0.3 : zoom < 13 ? 0.6 : 1.0;
+        const shouldSample = sampleRate < 1.0;
+        
+        let pointsDrawn = 0;
+        let pointsChecked = 0;
+
+        // Batch drawing operations for better performance
+        const colorMap = {
+          severe: { color: '#ff3333', glow: 'rgba(255, 51, 51, 0.5)' },
+          high: { color: '#ff8800', glow: 'rgba(255, 136, 0, 0.4)' },
+          moderate: { color: '#ffdd00', glow: 'rgba(255, 221, 0, 0.3)' },
+          standard: { color: '#00ddff', glow: 'rgba(0, 221, 255, 0.25)' }
+        };
+
+        // Draw points with optimized batching
+        for (let i = 0; i < points.length; i++) {
+          // Sampling at low zoom
+          if (shouldSample && Math.random() > sampleRate) continue;
+          
+          // Handle both old array format and new object format
+          const point = points[i];
+          const lat = point.lat || point[0];
+          const lon = point.lon || point[1];
+          const intensity = point.severity || point[2] || 0.5;
+          
+          pointsChecked++;
+          
+          // Fast bounds check
+          if (lat < minLat || lat > maxLat || lon < minLng || lon > maxLng) continue;
+          
+          const pointXY = this._map.latLngToContainerPoint([lat, lon]);
+          
+          // Skip if outside canvas bounds
+          if (pointXY.x < -50 || pointXY.x > size.x + 50 || pointXY.y < -50 || pointXY.y > size.y + 50) continue;
+          
+          // Get color based on severity
+          let style;
+          if (intensity >= 0.85) {
+            style = colorMap.severe;
+          } else if (intensity >= 0.65) {
+            style = colorMap.high;
+          } else if (intensity >= 0.4) {
+            style = colorMap.moderate;
+          } else {
+            style = colorMap.standard;
+          }
+
+          // Glow effect
+          ctx.beginPath();
+          ctx.arc(pointXY.x, pointXY.y, baseSize * 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = style.glow;
+          ctx.fill();
+
+          // Main dot
+          ctx.beginPath();
+          ctx.arc(pointXY.x, pointXY.y, baseSize, 0, Math.PI * 2);
+          ctx.fillStyle = style.color;
+          ctx.fill();
+          
+          pointsDrawn++;
+        }
+        
+        // Notify parent component of points drawn
+        if (onPointsDrawn) {
+          onPointsDrawn(pointsDrawn, points.length);
+        }
+        
+        const renderTime = performance.now() - startTime;
+        if (renderTime > 100) {
+          console.log(`Rendered ${pointsDrawn.toLocaleString()} points (checked ${pointsChecked.toLocaleString()}) in ${renderTime.toFixed(0)}ms`);
+        }
       }
     });
-    heatLayer.addTo(map);
-    heatLayerRef.current = heatLayer;
 
-    return () => { if (heatLayerRef.current) map.removeLayer(heatLayerRef.current); };
+    const layer = new CanvasLayer();
+    layer.addTo(map);
+    layerRef.current = layer;
+
+    return () => { if (layerRef.current) map.removeLayer(layerRef.current); };
   }, [points, map]);
 
   return null;
@@ -49,15 +252,36 @@ function MapView() {
   const [loading, setLoading] = useState(true);
   const [selectedCamera, setSelectedCamera] = useState(null);
   const [mapInstance, setMapInstance] = useState(null);
+  const [pointsDrawn, setPointsDrawn] = useState(0);
+  const [selectedViolation, setSelectedViolation] = useState(null);
+  const [violationPopupPos, setViolationPopupPos] = useState(null);
 
   useEffect(() => {
     loadData();
   }, []);
 
+  // Close tooltip when map moves
+  useEffect(() => {
+    if (!mapInstance) return;
+    
+    const closeTooltip = () => {
+      setSelectedViolation(null);
+      setViolationPopupPos(null);
+    };
+    
+    mapInstance.on('move', closeTooltip);
+    mapInstance.on('zoom', closeTooltip);
+    
+    return () => {
+      mapInstance.off('move', closeTooltip);
+      mapInstance.off('zoom', closeTooltip);
+    };
+  }, [mapInstance]);
+
   const loadData = async () => {
     try {
       const [heatmapRes, camerasRes] = await Promise.all([
-        fetch(`${API_BASE}/api/heatmap?limit=50000`),
+        fetch(`${API_BASE}/api/heatmap?limit=300000`),
         fetch(`${API_BASE}/api/cameras`)
       ]);
 
@@ -91,7 +315,7 @@ function MapView() {
       <header className="map-header">
         <div className="header-left">
           <span className="logo-icon">🗺️</span>
-          <span className="logo-text">NYC Violation Heatmap</span>
+          <span className="logo-text">NYC Violation Map</span>
         </div>
         <div className="header-right">
           <button className="nav-link primary" onClick={() => navigate('/dmv')}>
@@ -120,7 +344,16 @@ function MapView() {
               url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             />
             
-            {heatmapPoints.length > 0 && <HeatmapLayer points={heatmapPoints} />}
+            {heatmapPoints.length > 0 && (
+              <ViolationLayer 
+                points={heatmapPoints} 
+                onPointsDrawn={(drawn, total) => setPointsDrawn(drawn)}
+                onPointClick={(point, screenPos) => {
+                  setSelectedViolation(point);
+                  setViolationPopupPos(screenPos);
+                }}
+              />
+            )}
             
             {cameras.map((camera, i) => (
               <CameraMarker
@@ -137,11 +370,38 @@ function MapView() {
         <div className="map-stats-overlay">
           <div className="stat-item">
             <span className="stat-value">{heatmapPoints.length.toLocaleString()}</span>
-            <span className="stat-label">Violations</span>
+            <span className="stat-label">Total Violations</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-value">{pointsDrawn > 0 ? pointsDrawn.toLocaleString() : '...'}</span>
+            <span className="stat-label">Visible</span>
           </div>
           <div className="stat-item">
             <span className="stat-value">{cameras.length}</span>
             <span className="stat-label">AI Cameras</span>
+          </div>
+        </div>
+
+        {/* Violation Legend */}
+        <div className="heatmap-legend">
+          <h4>Violation Severity</h4>
+          <div className="legend-dots">
+            <div className="legend-dot-item">
+              <span className="dot glow" style={{background: '#00ddff', boxShadow: '0 0 8px #00ddff'}}></span>
+              <span>1-10 mph over</span>
+            </div>
+            <div className="legend-dot-item">
+              <span className="dot glow" style={{background: '#ffdd00', boxShadow: '0 0 8px #ffdd00'}}></span>
+              <span>11-20 mph over</span>
+            </div>
+            <div className="legend-dot-item">
+              <span className="dot glow" style={{background: '#ff8800', boxShadow: '0 0 8px #ff8800'}}></span>
+              <span>21-30 mph over</span>
+            </div>
+            <div className="legend-dot-item">
+              <span className="dot glow" style={{background: '#ff3333', boxShadow: '0 0 8px #ff3333'}}></span>
+              <span>31+ mph over</span>
+            </div>
           </div>
         </div>
 
@@ -173,6 +433,49 @@ function MapView() {
           onClose={() => setSelectedCamera(null)}
           onDetectionComplete={handleDetectionComplete}
         />
+      )}
+
+      {/* Violation Info Tooltip */}
+      {selectedViolation && violationPopupPos && (
+        <div 
+          className="violation-tooltip"
+          style={{
+            position: 'absolute',
+            left: `${violationPopupPos.x + 15}px`,
+            top: `${violationPopupPos.y - 10}px`,
+            transform: 'translateY(-50%)'
+          }}
+        >
+          <button className="violation-tooltip-close" onClick={() => {
+            setSelectedViolation(null);
+            setViolationPopupPos(null);
+          }}>×</button>
+          <div className="violation-tooltip-content">
+            <div className="violation-tooltip-header">
+              <span className="violation-code">{selectedViolation.code || 'N/A'}</span>
+              <span className="violation-severity">
+                {selectedViolation.severity >= 0.85 ? '🔴 Severe' :
+                 selectedViolation.severity >= 0.65 ? '🟠 High' :
+                 selectedViolation.severity >= 0.4 ? '🟡 Moderate' : '🔵 Standard'}
+              </span>
+            </div>
+            <div className="violation-tooltip-body">
+              <div className="violation-tooltip-line">
+                <strong>{selectedViolation.description || 'Speeding violation'}</strong>
+              </div>
+              {selectedViolation.plate && (
+                <div className="violation-tooltip-line">
+                  Plate: {selectedViolation.plate} ({selectedViolation.state || 'NY'})
+                </div>
+              )}
+              {selectedViolation.date && (
+                <div className="violation-tooltip-line">
+                  {new Date(selectedViolation.date).toLocaleDateString()} {new Date(selectedViolation.date).toLocaleTimeString()}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
