@@ -25,6 +25,7 @@ function DMVDashboard() {
   const [isaSummary, setIsaSummary] = useState(null);
   const [warningDrivers, setWarningDrivers] = useState(null);
   const [warningPlates, setWarningPlates] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const navigate = useNavigate();
 
   // Enable page scrolling (override body overflow:hidden)
@@ -187,19 +188,11 @@ function DMVDashboard() {
     });
   };
 
-  // CRASH RISK BADGES
-  const getCrashRiskBadge = (score) => {
-    if (score >= 75) return { label: 'HIGH RISK', class: 'crash-high' };
-    if (score >= 50) return { label: 'DANGEROUS', class: 'crash-danger' };
-    if (score >= 25) return { label: 'CONCERNING', class: 'crash-warning' };
-    return { label: 'LOW', class: 'crash-low' };
-  };
-
   // STATUS - Based on ISA threshold: ≥11 pts OR ≥16 tickets
   const getStatus = (driver) => {
     const points = driver.total_points || driver.risk_points || 0;
     const tickets = driver.violation_count || 0;
-    const isSuperSpeeder = driver.severe_count > 0 || driver.crash_risk_score >= 75;
+    const isSuperSpeeder = driver.severe_count > 0;
     
     // ISA Notice: ≥11 pts OR ≥16 tickets
     if (points >= 11 || tickets >= 16) {
@@ -226,8 +219,9 @@ function DMVDashboard() {
     if (!dashboard?.queue) return [];
     let filtered = [...dashboard.queue];
     
+    // Apply category filter first
     switch (activeFilter) {
-      case 'high_risk': filtered = filtered.filter(d => d.crash_risk_score >= 50); break;
+      case 'high_risk': filtered = filtered.filter(d => (d.total_points || d.risk_points || 0) >= 15 || (d.severe_count || 0) >= 3); break;
       case 'isa_notice': 
         filtered = filtered.filter(d => {
           const points = d.total_points || d.risk_points || 0;
@@ -240,7 +234,7 @@ function DMVDashboard() {
           const points = d.total_points || d.risk_points || 0;
           const tickets = d.violation_count || 0;
           const isIsaNotice = points >= 11 || tickets >= 16;
-          const isSuperSpeeder = d.severe_count > 0 || d.crash_risk_score >= 75;
+          const isSuperSpeeder = d.severe_count > 0;
           return !isIsaNotice && isSuperSpeeder;
         });
         break;
@@ -250,7 +244,7 @@ function DMVDashboard() {
           const points = d.total_points || d.risk_points || 0;
           const tickets = d.violation_count || 0;
           const isIsaNotice = points >= 11 || tickets >= 16;
-          const isSuperSpeeder = d.severe_count > 0 || d.crash_risk_score >= 75;
+          const isSuperSpeeder = d.severe_count > 0;
           return !isIsaNotice && !isSuperSpeeder;
         });
         break;
@@ -262,6 +256,42 @@ function DMVDashboard() {
         break;
       default: break;
     }
+    
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(d => {
+        // Search by plate
+        if (d.plate?.toLowerCase().includes(query)) return true;
+        
+        // Search by driver license
+        if (d.driver_license_number?.toLowerCase().includes(query)) return true;
+        if (d.license?.toLowerCase().includes(query)) return true;
+        
+        // Search by driver name
+        if (d.name?.toLowerCase().includes(query)) return true;
+        if (d.driver_name?.toLowerCase().includes(query)) return true;
+        
+        // Search by violation code
+        if (d.most_common_violation?.toLowerCase().includes(query)) return true;
+        
+        // Search by date (format: YYYY-MM-DD or MM/DD/YYYY)
+        if (d.last_violation) {
+          const dateStr = new Date(d.last_violation).toLocaleDateString('en-US');
+          const isoDate = new Date(d.last_violation).toISOString().split('T')[0];
+          if (dateStr.includes(query) || isoDate.includes(query)) return true;
+        }
+        
+        // Search by county/location
+        if (d.top_county?.toLowerCase().includes(query)) return true;
+        
+        // Search by agency
+        if (d.top_agency?.toLowerCase().includes(query)) return true;
+        
+        return false;
+      });
+    }
+    
     return filtered;
   };
 
@@ -449,6 +479,22 @@ function DMVDashboard() {
             )}
           </div>
 
+          {/* SEARCH BAR */}
+          <div className="search-bar">
+            <input 
+              type="text"
+              placeholder="Search by plate, driver license, name, violation code, date (MM/DD/YYYY), county, or agency..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="search-input"
+            />
+            {searchQuery && (
+              <button className="search-clear" onClick={() => setSearchQuery('')}>
+                ✕
+              </button>
+            )}
+          </div>
+
           {/* ENFORCEMENT QUEUE */}
           <div className="queue-section">
             <h2 className="section-title">Enforcement Queue</h2>
@@ -468,7 +514,6 @@ function DMVDashboard() {
                     </th>
                     <th>License / Plate</th>
                     <th>Violations / Points</th>
-                    <th>Crash Risk</th>
                     <th>Risk Factors</th>
                     <th>Status</th>
                   </tr>
@@ -482,9 +527,8 @@ function DMVDashboard() {
                     </td></tr>
                   )}
                   {filteredQueue.map((driver, i) => {
-                    const crashBadge = getCrashRiskBadge(driver.crash_risk_score);
                     const status = getStatus(driver);
-                    const isHighRisk = driver.crash_risk_score >= 50;
+                    const isHighRisk = (driver.total_points || driver.risk_points || 0) >= 15 || (driver.severe_count || 0) >= 3;
                     
                     return (
                       <tr key={i} className={isHighRisk ? 'row-critical' : ''}>
@@ -517,12 +561,6 @@ function DMVDashboard() {
                               <span className="label">Points:</span>
                               <span className="value">{driver.total_points || driver.risk_points}</span>
                             </div>
-                          </div>
-                        </td>
-                        <td>
-                          <div className="crash-cell">
-                            <span className={`crash-badge ${crashBadge.class}`}>{driver.crash_risk_score}%</span>
-                            <span className="crash-label">{crashBadge.label}</span>
                           </div>
                         </td>
                         <td>

@@ -342,14 +342,18 @@ def get_dashboard():
         cross_jurisdiction_count = 0
 
         # Enforcement queue: top 5000 drivers by risk
-        # Pre-compute license violation counts for performance
-        cur.execute("""
-            WITH license_counts AS (
+        # Pre-compute license violation counts AND points for performance
+        points_case_sql = "CASE " + " ".join([f"WHEN violation_code = '{code}' THEN {points}" for code, points in policy["points_per_code"].items()]) + f" ELSE {policy['default_points']} END"
+        
+        cur.execute(f"""
+            WITH license_stats AS (
                 SELECT 
                     TRIM(driver_license_number) as license_num,
-                    COUNT(*) as license_violation_count
+                    COUNT(*) as license_violation_count,
+                    SUM(CASE WHEN disposition = 'GUILTY' THEN {points_case_sql} ELSE 0 END) as license_points
                 FROM violations
                 WHERE driver_license_number IS NOT NULL
+                  AND driver_license_number NOT IN ('', 'NA', 'UNKNOWN')
                 GROUP BY TRIM(driver_license_number)
             )
             SELECT 
@@ -357,8 +361,9 @@ def get_dashboard():
                 rv.last_violation, rv.severe_count, rv.high_tier_count, rv.low_tier_count,
                 rv.night_violations, rv.primary_borough, rv.borough_count, rv.primary_court,
                 latest_v.driver_license_number,
-                COALESCE(license_counts.license_violation_count, 0) as license_violation_count,
-                rv.primary_agency
+                COALESCE(license_stats.license_violation_count, 0) as license_violation_count,
+                rv.primary_agency,
+                COALESCE(license_stats.license_points, 0) as license_points
             FROM (
                 SELECT * FROM dmv_risk_view ORDER BY risk_points DESC LIMIT 5000
             ) rv
@@ -367,7 +372,7 @@ def get_dashboard():
                 WHERE plate_id = rv.plate_id AND plate_state = rv.registration_state 
                 ORDER BY date_of_violation DESC LIMIT 1
             ) latest_v ON true
-            LEFT JOIN license_counts ON TRIM(latest_v.driver_license_number) = license_counts.license_num
+            LEFT JOIN license_stats ON TRIM(latest_v.driver_license_number) = license_stats.license_num
         """)
         
         all_drivers = []
@@ -375,7 +380,7 @@ def get_dashboard():
             plate_id = row[0]
             state = row[1]
             violation_count = row[2]  # Plate violation count
-            risk_points = row[3]
+            risk_points = row[3]  # Plate points
             last_violation = row[4]
             severe_count = row[5]
             high_tier_count = row[6]
@@ -387,16 +392,18 @@ def get_dashboard():
             driver_license_number = row[12]
             license_violation_count = row[13] if row[13] is not None else 0  # License-specific violation count
             police_agency = row[14] if len(row) > 14 else "Unknown"
+            license_points = row[15] if len(row) > 15 else 0  # License-specific points
             
-            # Use license violation count if license number exists, otherwise use plate count
-            display_violation_count = license_violation_count if driver_license_number else violation_count
+            # Use license-specific counts when license number exists, otherwise use plate counts
+            display_violation_count = license_violation_count if driver_license_number and license_violation_count > 0 else violation_count
+            display_points = license_points if driver_license_number and license_points > 0 else risk_points
             
-            status = compute_status(risk_points, violation_count, policy)
-            trigger_reason = get_trigger_reason(risk_points, violation_count, policy)
+            status = compute_status(display_points, display_violation_count, policy)
+            trigger_reason = get_trigger_reason(display_points, display_violation_count, policy)
             
             # Compute crash risk score
             crash_risk = compute_crash_risk_score(
-                risk_points, violation_count, night_violations, borough_count, policy
+                display_points, display_violation_count, night_violations, borough_count, policy
             )
             crash_risk_level = get_crash_risk_level(crash_risk)
             
@@ -415,9 +422,9 @@ def get_dashboard():
                 "state": state,
                 "violation_count": display_violation_count,  # Use license-specific count when available
                 "plate_violation_count": violation_count,  # Keep original plate count for reference
-                "risk_score": risk_points,
-                "risk_points": risk_points,
-                "total_points": risk_points,  # Alias for clarity
+                "risk_score": display_points,  # Use driver-specific or plate points
+                "risk_points": display_points,
+                "total_points": display_points,  # Alias for clarity - now matches violation count
                 "crash_risk_score": crash_risk,
                 "crash_risk_level": crash_risk_level,
                 "last_violation": last_violation.isoformat() if last_violation else None,
@@ -1399,37 +1406,59 @@ def api_plates_12m():
 @dmv_bp.route('/isa/send-summary', methods=['POST'])
 def send_isa_summary():
     """
-    Email alert stub - sends ISA threshold summary to DMV and vendors.
+    Email alert system - sends ISA threshold notifications to DMV and vendors.
+    Uses templates.html for professional HTML email formatting.
     In production, this would integrate with SMTP/SendGrid to send actual emails.
     For demo, it logs the action and returns success.
     """
     import logging
+    from email_utils import send_batch_isa_notifications, get_violation_description
     
     try:
         payload = request.get_json() or {}
-        recipients = payload.get("recipients", ["dmv@ny.gov"])
-        drivers_count = payload.get("drivers_count", 0)
+        recipients = payload.get("recipients", ["dmv@ny.gov", "vendor@isa.ny.gov"])
+        drivers_list = payload.get("drivers", [])
         plates_count = payload.get("plates_count", 0)
+        send_real = payload.get("send_real_email", False)  # Set to True in production
         
-        # Log the email action (in production, this sends real emails)
+        # Log the email action
         logging.info(
-            f"[ISA EMAIL STUB] Sending ISA summary to {recipients}. "
-            f"Drivers: {drivers_count}, Plates: {plates_count}"
+            f"[ISA EMAIL] Sending ISA notifications to {recipients}. "
+            f"Drivers: {len(drivers_list)}, Plates: {plates_count}"
         )
+        
+        # Send individual ISA notifications using template
+        email_results = None
+        if drivers_list:
+            # Prepare driver data for email template
+            drivers_for_email = []
+            for driver in drivers_list[:10]:  # Limit to first 10 for demo
+                drivers_for_email.append({
+                    "license_number": driver.get("license_number", "N/A"),
+                    "license_plate": driver.get("plate", "N/A"),
+                    "violation_code": driver.get("violation_code", "1180D"),
+                    "violation_description": get_violation_description(driver.get("violation_code", "1180D")),
+                    "total_points": driver.get("total_points", 0)
+                })
+            
+            email_results = send_batch_isa_notifications(drivers_for_email, send_real_email=send_real)
         
         return jsonify({
             "status": "ok",
-            "message": "ISA summary email queued for delivery",
+            "message": "ISA notifications sent successfully" if send_real else "ISA notifications queued (demo mode)",
             "sent_to": recipients,
             "summary": {
-                "drivers_11_plus": drivers_count,
+                "drivers_11_plus": len(drivers_list),
                 "plates_16_plus": plates_count,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
+                "emails_sent": email_results.get("sent", 0) if email_results else 0
             },
-            "note": "In production, CSVs would be attached and sent via SMTP/SendGrid"
+            "email_results": email_results,
+            "note": "Uses templates.html for professional ISA notice formatting. In production, emails would be sent via SMTP/SendGrid with CSV attachments."
         })
         
     except Exception as e:
+        logging.error(f"Error sending ISA emails: {e}")
         return jsonify({"error": str(e)}), 500
 
 

@@ -146,16 +146,16 @@ def compute_crash_risk_score(
     policy: dict = None
 ) -> float:
     """
-    Compute crash risk score (0-100) based on severity, nighttime, and geography.
+    Compute crash risk score (0-100) based on severity and nighttime violations.
     
     Formula:
-        Crash Risk = (severity_factor * 0.6) + (nighttime_factor * 0.3) + (cross_borough_factor * 0.1)
+        Crash Risk = (severity_factor * 0.7) + (nighttime_factor * 0.3)
     
     Args:
         total_points: Sum of ISA points from violations
         total_tickets: Total number of speeding tickets
         night_violations: Count of violations between 10pm-4am
-        borough_count: Number of distinct boroughs/jurisdictions
+        borough_count: Number of distinct boroughs/jurisdictions (not used in calculation)
         policy: Policy dict (defaults to ISA_POLICY)
     
     Returns:
@@ -166,20 +166,31 @@ def compute_crash_risk_score(
     
     isa_threshold = policy["isa_points_threshold"]
     
-    # Severity factor: normalized by ISA threshold, capped at 1.0
-    severity_factor = min(total_points / isa_threshold, 2.0) / 2.0  # Scale to 0-1
+    # Severity factor: based on points per violation (average severity)
+    # This prevents 1 severe violation from maxing out the score
+    avg_points_per_violation = total_points / total_tickets if total_tickets > 0 else 0
+    # Normalize: 11 points = threshold, so avg of 11+ points per violation = high risk
+    # Cap at 1.0 for very severe violations
+    severity_factor = min(avg_points_per_violation / isa_threshold, 1.0)
+    
+    # Apply violation count multiplier: more violations = higher risk
+    # 1 violation = 0.5x, 2-3 = 0.7x, 4+ = 1.0x
+    if total_tickets == 1:
+        violation_multiplier = 0.5
+    elif total_tickets <= 3:
+        violation_multiplier = 0.7
+    else:
+        violation_multiplier = 1.0
+    
+    severity_factor = severity_factor * violation_multiplier
     
     # Nighttime factor: percentage of violations at night (10pm-4am)
     nighttime_factor = (night_violations / total_tickets) if total_tickets > 0 else 0
     
-    # Cross-borough factor: binary (1 if multiple jurisdictions, 0 otherwise)
-    cross_borough_factor = 1.0 if borough_count > 1 else 0.0
-    
-    # Weighted crash risk score
+    # Weighted crash risk score (removed cross-borough factor)
     crash_risk = (
-        (severity_factor * 0.6) +
-        (nighttime_factor * 0.3) +
-        (cross_borough_factor * 0.1)
+        (severity_factor * 0.7) +
+        (nighttime_factor * 0.3)
     ) * 100
     
     return round(min(crash_risk, 100), 1)

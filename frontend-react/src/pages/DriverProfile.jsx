@@ -73,19 +73,6 @@ function DriverProfile() {
     }
   };
 
-  const getCrashRiskColor = (score) => {
-    if (score >= 75) return '#B71C1C';
-    if (score >= 50) return '#E65100';
-    if (score >= 25) return '#F57F17';
-    return '#2E7D32';
-  };
-
-  const getCrashRiskBadge = (score) => {
-    if (score >= 75) return { label: 'HIGH RISK', class: 'crash-high' };
-    if (score >= 50) return { label: 'DANGEROUS', class: 'crash-danger' };
-    if (score >= 25) return { label: 'CONCERNING', class: 'crash-warning' };
-    return { label: 'LOW', class: 'crash-low' };
-  };
 
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
   const formatDateTime = (d) => d ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -108,7 +95,6 @@ function DriverProfile() {
 
   const { driver, violations, alerts, policy } = profile;
   const isaThreshold = policy?.isa_points_threshold || 11;
-  const crashBadge = getCrashRiskBadge(driver.crash_risk_score);
   const latestAlert = alerts?.[0];
   const enforcementStatus = driver.enforcement_status || 'NEW';
 
@@ -144,38 +130,6 @@ function DriverProfile() {
                   {driver.is_cross_borough && <span className="cross-borough-tag">Cross-Jurisdiction</span>}
                 </div>
               </div>
-              <div className="crash-risk-display">
-                <div className={`crash-badge-large ${crashBadge.class}`}>
-                  <span className="crash-score">{driver.crash_risk_score}%</span>
-                  <span className="crash-label">{crashBadge.label}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Crash Risk Bar */}
-            <div className="risk-score-display">
-              <div className="risk-score-big">
-                <div className="risk-number" style={{ color: getCrashRiskColor(driver.crash_risk_score) }}>
-                  {driver.crash_risk_score}
-                </div>
-                <div className="risk-label">Crash Risk %</div>
-              </div>
-              <div className="risk-bar-large">
-                <div className="risk-bar-track">
-                  <div className="risk-bar-fill-large" style={{ 
-                    width: `${driver.crash_risk_score}%`,
-                    backgroundColor: getCrashRiskColor(driver.crash_risk_score)
-                  }}></div>
-                  <div className="risk-threshold-line" style={{ left: '50%' }}></div>
-                  <span className="risk-threshold-label" style={{ left: '50%' }}>Danger Zone (50%)</span>
-                </div>
-                <div className="risk-bar-labels">
-                  <span>0% Low</span>
-                  <span>25% Moderate</span>
-                  <span>50% Dangerous</span>
-                  <span>75%+ High Fatality</span>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -183,12 +137,6 @@ function DriverProfile() {
           <div className="why-matters-card">
             <h3 className="card-title">⚠️ Why This Driver Matters</h3>
             <div className="why-matters-content">
-              <div className="matter-stat">
-                <span className="matter-value" style={{ color: getCrashRiskColor(driver.crash_risk_score) }}>
-                  {driver.crash_risk_score}%
-                </span>
-                <span className="matter-label">Crash Risk Score</span>
-              </div>
               <div className="matter-stat">
                 <span className="matter-value">{driver.night_percentage}%</span>
                 <span className="matter-label">Nighttime Violations</span>
@@ -363,10 +311,6 @@ function DriverProfile() {
           <div className="case-history-card">
             <h3 className="card-title">Case Summary</h3>
             <div className="summary-content">
-              <div className="summary-row">
-                <span>Crash Risk</span>
-                <strong style={{ color: getCrashRiskColor(driver.crash_risk_score) }}>{driver.crash_risk_score}%</strong>
-              </div>
               <div className="summary-row"><span>ISA Points</span><strong>{driver.risk_points}</strong></div>
               <div className="summary-row"><span>Total Tickets</span><strong>{driver.violation_count}</strong></div>
               <div className="summary-row"><span>Severe</span><strong>{driver.severe_count}</strong></div>
