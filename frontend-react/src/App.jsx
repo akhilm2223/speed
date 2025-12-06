@@ -116,9 +116,17 @@ function DMVDashboardContent() {
   const getStatus = (driver) => {
     const points = driver.total_points || driver.risk_points || 0;
     const tickets = driver.violation_count || 0;
+    const isSuperSpeeder = driver.severe_count > 0 || driver.crash_risk_score >= 75;
+    
+    // ISA Notice: ≥11 pts OR ≥16 tickets
     if (points >= 11 || tickets >= 16) {
-      return { label: 'Notice Sent', class: 'status-notice-sent' };
+      return { label: 'ISA Notice', class: 'status-isa-notice' };
     }
+    // Super Speeder: has severe violations or very high crash risk
+    if (isSuperSpeeder) {
+      return { label: 'Super Speeder', class: 'status-super-speeder' };
+    }
+    // Monitoring: everyone else being tracked
     return { label: 'Monitoring', class: 'status-monitoring' };
   };
 
@@ -135,11 +143,20 @@ function DMVDashboardContent() {
     
     switch (activeFilter) {
       case 'high_risk': filtered = filtered.filter(d => d.crash_risk_score >= 50); break;
-      case 'notice_sent': 
+      case 'isa_notice': 
         filtered = filtered.filter(d => {
           const points = d.total_points || d.risk_points || 0;
           const tickets = d.violation_count || 0;
-          return (points >= 11 || tickets >= 16) || d.enforcement_status === 'NOTICE_SENT';
+          return (points >= 11 || tickets >= 16);
+        });
+        break;
+      case 'super_speeder':
+        filtered = filtered.filter(d => {
+          const points = d.total_points || d.risk_points || 0;
+          const tickets = d.violation_count || 0;
+          const isIsaNotice = points >= 11 || tickets >= 16;
+          const isSuperSpeeder = d.severe_count > 0 || d.crash_risk_score >= 75;
+          return !isIsaNotice && isSuperSpeeder;
         });
         break;
       case 'nighttime': filtered = filtered.filter(d => d.is_night_heavy); break;
@@ -147,7 +164,9 @@ function DMVDashboardContent() {
         filtered = filtered.filter(d => {
           const points = d.total_points || d.risk_points || 0;
           const tickets = d.violation_count || 0;
-          return points < 11 && tickets < 16;
+          const isIsaNotice = points >= 11 || tickets >= 16;
+          const isSuperSpeeder = d.severe_count > 0 || d.crash_risk_score >= 75;
+          return !isIsaNotice && !isSuperSpeeder;
         });
         break;
       case 'recent': 
@@ -168,18 +187,60 @@ function DMVDashboardContent() {
   const filteredQueue = getFilteredQueue();
   const canBatchSend = selectedDrivers.size > 0;
 
+  // Calculate status counts and total violations
+  const statusCounts = (dashboard?.queue || []).reduce((acc, d) => {
+    const points = d.total_points || d.risk_points || 0;
+    const tickets = d.violation_count || 0;
+    const isSuperSpeeder = d.severe_count > 0 || d.crash_risk_score >= 75;
+    
+    if (points >= 11 || tickets >= 16) {
+      acc.isaNotice++;
+    } else if (isSuperSpeeder) {
+      acc.superSpeeder++;
+    } else {
+      acc.monitoring++;
+    }
+    
+    // Track total violations
+    acc.totalViolations += tickets;
+    
+    return acc;
+  }, { isaNotice: 0, superSpeeder: 0, monitoring: 0, totalViolations: 0 });
+
   return (
     <div className="dmv-tab-content">
       {/* POLICY BAR */}
       <div className="policy-banner">
         <div className="policy-badge">
           <span className="policy-version">Policy {policy?.version || '0.1-draft'}</span>
-          <span className="policy-rule">ISA Required: ≥{policy?.isa_points_threshold || 11} pts OR ≥{policy?.isa_ticket_threshold || 16} tickets</span>
+          <span className="policy-rule">ISA Notice: ≥{policy?.isa_points_threshold || 11} pts OR ≥{policy?.isa_ticket_threshold || 16} tickets</span>
+          <span className="policy-counter">Monitoring: &lt;{policy?.isa_points_threshold || 11} pts, &lt;{policy?.isa_ticket_threshold || 16} tickets</span>
+          <span className="policy-counter">Super Speeder: ≥3 violations</span>
         </div>
       </div>
 
       <div className="dmv-content">
         <div className="dmv-main">
+          {/* POLICY STATS STRIP */}
+          <div className="policy-stats-strip">
+            <div className="policy-stat-card">
+              <div className="policy-stat-value">{statusCounts.isaNotice.toLocaleString()}</div>
+              <div className="policy-stat-label">ISA Notice</div>
+            </div>
+            <div className="policy-stat-card">
+              <div className="policy-stat-value">{statusCounts.monitoring.toLocaleString()}</div>
+              <div className="policy-stat-label">Monitoring</div>
+            </div>
+            <div className="policy-stat-card">
+              <div className="policy-stat-value">{statusCounts.superSpeeder.toLocaleString()}</div>
+              <div className="policy-stat-label">Super Speeder</div>
+            </div>
+            <div className="policy-stat-card">
+              <div className="policy-stat-value">{statusCounts.totalViolations.toLocaleString()}</div>
+              <div className="policy-stat-label">Total Violations</div>
+            </div>
+          </div>
+
           {/* IMPACT STRIP */}
           {impactMetrics && (
             <div className="impact-strip">
@@ -243,8 +304,9 @@ function DMVDashboardContent() {
             <span className="filter-label">Filters:</span>
             {[
               { key: 'high_risk', label: 'High Risk' },
+              { key: 'isa_notice', label: 'ISA Notice' },
+              { key: 'super_speeder', label: 'Super Speeder' },
               { key: 'monitoring', label: 'Monitoring' },
-              { key: 'notice_sent', label: 'Notice Sent' },
               { key: 'nighttime', label: 'Nighttime' },
               { key: 'recent', label: 'By Date' },
               { key: 'all', label: 'All' },

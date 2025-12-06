@@ -146,10 +146,17 @@ function DMVDashboard() {
   const getStatus = (driver) => {
     const points = driver.total_points || driver.risk_points || 0;
     const tickets = driver.violation_count || 0;
+    const isSuperSpeeder = driver.severe_count > 0 || driver.crash_risk_score >= 75;
     
+    // ISA Notice: ≥11 pts OR ≥16 tickets
     if (points >= 11 || tickets >= 16) {
-      return { label: 'Notice Sent', class: 'status-notice-sent' };
+      return { label: 'ISA Notice', class: 'status-isa-notice' };
     }
+    // Super Speeder: has severe violations or very high crash risk
+    if (isSuperSpeeder) {
+      return { label: 'Super Speeder', class: 'status-super-speeder' };
+    }
+    // Monitoring: everyone else being tracked
     return { label: 'Monitoring', class: 'status-monitoring' };
   };
 
@@ -168,21 +175,30 @@ function DMVDashboard() {
     
     switch (activeFilter) {
       case 'high_risk': filtered = filtered.filter(d => d.crash_risk_score >= 50); break;
-      case 'notice_sent': 
+      case 'isa_notice': 
         filtered = filtered.filter(d => {
           const points = d.total_points || d.risk_points || 0;
           const tickets = d.violation_count || 0;
-          // Show drivers who meet ISA threshold (should have notice sent) OR have NOTICE_SENT status
-          return (points >= 11 || tickets >= 16) || d.enforcement_status === 'NOTICE_SENT';
+          return (points >= 11 || tickets >= 16);
+        });
+        break;
+      case 'super_speeder':
+        filtered = filtered.filter(d => {
+          const points = d.total_points || d.risk_points || 0;
+          const tickets = d.violation_count || 0;
+          const isIsaNotice = points >= 11 || tickets >= 16;
+          const isSuperSpeeder = d.severe_count > 0 || d.crash_risk_score >= 75;
+          return !isIsaNotice && isSuperSpeeder;
         });
         break;
       case 'nighttime': filtered = filtered.filter(d => d.is_night_heavy); break;
-      case 'isa_required': filtered = filtered.filter(d => d.status === 'ISA_REQUIRED' && d.enforcement_status === 'NEW'); break;
       case 'monitoring': 
         filtered = filtered.filter(d => {
           const points = d.total_points || d.risk_points || 0;
           const tickets = d.violation_count || 0;
-          return points < 11 && tickets < 16;
+          const isIsaNotice = points >= 11 || tickets >= 16;
+          const isSuperSpeeder = d.severe_count > 0 || d.crash_risk_score >= 75;
+          return !isIsaNotice && !isSuperSpeeder;
         });
         break;
       case 'recent': 
@@ -204,6 +220,14 @@ function DMVDashboard() {
   const policy = dashboard?.policy;
   const filteredQueue = getFilteredQueue();
   const canBatchSend = selectedDrivers.size > 0;
+
+  // Use KPIs from backend (accurate counts from full database)
+  const statusCounts = {
+    isaNotice: dashboard?.kpis?.isa_required || 0,
+    monitoring: dashboard?.kpis?.monitoring || 0,
+    superSpeeder: dashboard?.kpis?.super_speeders || 0,
+    totalViolations: dashboard?.kpis?.total_violations || 0
+  };
 
   return (
     <div className="dmv-dashboard">
@@ -233,17 +257,48 @@ function DMVDashboard() {
         </div>
       </header>
 
+      {/* POLICY BAR */}
+      <div className="policy-banner">
+        <div className="policy-badge">
+          <span className="policy-version">Policy {policy?.version || '0.1-draft'}</span>
+          <span className="policy-rule">ISA Notice: ≥{policy?.isa_points_threshold || 11} pts OR ≥{policy?.isa_ticket_threshold || 16} tickets</span>
+          <span className="policy-counter">Monitoring: &lt;{policy?.isa_points_threshold || 11} pts, &lt;{policy?.isa_ticket_threshold || 16} tickets</span>
+          <span className="policy-counter">Super Speeder: ≥3 violations</span>
+        </div>
+      </div>
+
       {activeTab === 'dashboard' ? (
       <div className="dmv-content">
         <div className="dmv-layout-with-sidebar">
           <div className="dmv-main">
+          {/* POLICY STATS STRIP */}
+          <div className="policy-stats-strip">
+            <div className="policy-stat-card">
+              <div className="policy-stat-value">{statusCounts.isaNotice.toLocaleString()}</div>
+              <div className="policy-stat-label">ISA Notice</div>
+            </div>
+            <div className="policy-stat-card">
+              <div className="policy-stat-value">{statusCounts.monitoring.toLocaleString()}</div>
+              <div className="policy-stat-label">Monitoring</div>
+            </div>
+            <div className="policy-stat-card">
+              <div className="policy-stat-value">{statusCounts.superSpeeder.toLocaleString()}</div>
+              <div className="policy-stat-label">Super Speeder</div>
+            </div>
+            <div className="policy-stat-card">
+              <div className="policy-stat-value">{statusCounts.totalViolations.toLocaleString()}</div>
+              <div className="policy-stat-label">Total Violations</div>
+            </div>
+          </div>
+
           {/* FILTER BAR */}
           <div className="filter-bar">
             <span className="filter-label">Filters:</span>
             {[
               { key: 'high_risk', label: 'High Risk' },
+              { key: 'isa_notice', label: 'ISA Notice' },
+              { key: 'super_speeder', label: 'Super Speeder' },
               { key: 'monitoring', label: 'Monitoring' },
-              { key: 'notice_sent', label: 'Notice Sent' },
               { key: 'nighttime', label: 'Nighttime' },
               { key: 'recent', label: 'By Date' },
               { key: 'all', label: 'All' },

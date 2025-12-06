@@ -124,16 +124,18 @@
 .policy-banner {
   background: #151515;
   border-bottom: 1px solid #222;
-  padding: 10px 24px;
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .policy-badge {
   display: flex;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  gap: 8px;
   max-width: 1600px;
   margin: 0 auto;
-  flex-wrap: wrap;
 }
 
 .policy-version {
@@ -142,12 +144,61 @@
   color: #fff;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  margin-bottom: 4px;
 }
 
 .policy-rule {
   font-size: 12px;
   color: #888;
-  margin-left: 8px;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.policy-counter {
+  font-size: 12px;
+  color: #666;
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* Policy Stats Strip - matches KPI strip format */
+.policy-stats-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.policy-stat-card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 24px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.policy-stat-card:hover {
+  transform: translateY(-3px);
+  background: #1f1f1f;
+  border-color: #3a3a3a;
+  box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+}
+
+.policy-stat-value {
+  font-size: 40px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.policy-stat-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .data-source-tag {
@@ -1034,10 +1085,17 @@
   letter-spacing: 0.5px;
 }
 
-.status-badge.status-notice-sent {
+.status-badge.status-isa-notice {
   background: #fff;
   color: #000;
   border: 1px solid #fff;
+  font-weight: 700;
+}
+
+.status-badge.status-super-speeder {
+  background: #333;
+  color: #fff;
+  border: 1px solid #555;
 }
 
 .status-badge.status-monitoring {

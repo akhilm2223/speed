@@ -314,7 +314,8 @@ def get_dashboard():
                 COUNT(*) FILTER (
                     WHERE violation_count >= 3
                 ) AS super_speeders,
-                0 AS cross_borough
+                0 AS cross_borough,
+                COALESCE(SUM(violation_count), 0) AS total_violations
             FROM dmv_risk_view
             """,
             (pts_threshold, tkt_threshold, mon_threshold, pts_threshold, tkt_threshold),
@@ -324,6 +325,7 @@ def get_dashboard():
         kpi_monitoring = kpi_row[1] or 0
         kpi_super_speeders = kpi_row[2] or 0
         kpi_cross_borough = kpi_row[3] or 0
+        kpi_total_violations = int(kpi_row[4] or 0)
         
         # County stats for new KPI cards (Placeholder as county not available)
         top_risk_counties = []
@@ -471,6 +473,7 @@ def get_dashboard():
                 "isa_required": kpi_isa_required,
                 "monitoring": kpi_monitoring,
                 "super_speeders": kpi_super_speeders,
+                "total_violations": kpi_total_violations,
                 "cross_borough_violators": kpi_cross_borough,
                 "cross_jurisdiction_offenders": cross_jurisdiction_count,
                 "latest_violation": latest.isoformat() if latest else None,
