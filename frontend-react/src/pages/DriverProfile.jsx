@@ -189,6 +189,7 @@ function DriverProfile() {
                       {v.is_high_tier && <span className="tier-badge high">HIGH</span>}
                       {v.is_night && <span className="tier-badge night">NIGHT</span>}
                     </span>
+                    {v.description && <span className="violation-description">{v.description}</span>}
                     <span className="violation-location">{v.borough}</span>
                   </div>
                   <div className="violation-points">+3 pts</div>

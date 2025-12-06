@@ -1,4 +1,3 @@
-
 -- Vehicles: identified by plate + registration state
 CREATE TABLE IF NOT EXISTS vehicles (
     plate_id            VARCHAR(16) NOT NULL,  -- Common: plate_id / reg_plate_num
@@ -12,11 +11,14 @@ CREATE TABLE IF NOT EXISTS violations (
     violation_id        BIGSERIAL PRIMARY KEY,
     plate_id            VARCHAR(16) NOT NULL,
     registration_state  VARCHAR(10) NOT NULL,
-    source_type         VARCHAR(32) NOT NULL,  -- 'police_stop' or 'traffic_camera'
+    source_type         VARCHAR(32) NOT NULL,     -- police_stop, camera, etc.
     violation_code      VARCHAR(64) NOT NULL,
-    issue_date          TIMESTAMPTZ,           -- When it happened
-    violation_location  VARCHAR(255),          -- Human-readable location
 
+    -- NEW: Human-readable description of the speeding violation type
+    violation_description VARCHAR(128),           -- e.g., "Speeding 11-30 mph over", "School zone speeding"
+
+    issue_date          TIMESTAMPTZ,              -- When it happened
+    violation_location  VARCHAR(255),             -- Human-readable location
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT fk_violations_vehicle
@@ -24,4 +26,3 @@ CREATE TABLE IF NOT EXISTS violations (
         REFERENCES vehicles (plate_id, registration_state)
         ON DELETE CASCADE
 );
-

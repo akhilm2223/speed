@@ -63,7 +63,7 @@ docker run -d \
   -e POSTGRES_PASSWORD=mypassword \
   -e POSTGRES_DB=traffic_violations_db \
   -p 5433:5432 \
-  postgres:14
+  postgres:14-alpine
 ```
 
 **Option B: Local PostgreSQL**

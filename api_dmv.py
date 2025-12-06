@@ -248,7 +248,7 @@ def get_driver(plate_id):
         # Get all violations
         cur.execute("""
             SELECT 
-                violation_id, violation_code, issue_date, violation_location,
+                violation_id, violation_code, violation_description, issue_date, violation_location,
                 EXTRACT(HOUR FROM issue_date) as hour
             FROM violations
             WHERE plate_id = %s AND registration_state = 'NY'
@@ -258,7 +258,7 @@ def get_driver(plate_id):
         violations = []
         boroughs_seen = set()
         for row in cur:
-            location = row[3] or ""
+            location = row[4] or ""
             borough = location.split(",")[0] if location else "Unknown"
             boroughs_seen.add(borough)
             
@@ -271,14 +271,15 @@ def get_driver(plate_id):
                 except:
                     pass
             
-            hour = int(row[4]) if row[4] else 0
+            hour = int(row[5]) if row[5] else 0
             is_night = hour >= 22 or hour < 4
             is_high_tier = row[1] == '1180D'
             
             violations.append({
                 "id": row[0],
                 "code": row[1],
-                "date": row[2].isoformat() if row[2] else None,
+                "description": row[2] or "",
+                "date": row[3].isoformat() if row[3] else None,
                 "location": location,
                 "borough": borough,
                 "lat": lat,

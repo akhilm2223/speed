@@ -91,6 +91,28 @@ def fetch_all_violations():
 # HELPER FUNCTIONS
 # =============================================================================
 
+def get_violation_description(violation_code):
+    """Map violation code to human-readable description."""
+    code = str(violation_code or "").strip().upper()
+    
+    # NYC Speeding Violation Codes
+    descriptions = {
+        "1180A": "Speeding 1-10 mph over limit",
+        "1180B": "Speeding 11-20 mph over limit",
+        "1180C": "Speeding 21-30 mph over limit",
+        "1180D": "Speeding 31+ mph over limit (Excessive Speed)",
+        "1180E": "Speeding in school zone",
+        "1180F": "Speeding in work zone",
+    }
+    
+    # Return specific description or generic one
+    if code in descriptions:
+        return descriptions[code]
+    elif code.startswith("1180"):
+        return "Speeding violation"
+    else:
+        return "Traffic violation"
+
 def is_valid_location(row):
     """Check if row has valid coordinates."""
     try:
@@ -222,14 +244,18 @@ def save_to_database(violations):
                 continue
         
         # Insert new violation
+        violation_code = row.get("violation_code")
+        violation_description = get_violation_description(violation_code)
+        
         cur.execute("""
             INSERT INTO violations (
                 plate_id, registration_state, source_type,
-                violation_code, issue_date, violation_location
-            ) VALUES (%s, %s, %s, %s, %s, %s)
+                violation_code, violation_description, issue_date, violation_location
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (
             plate, state, "police_stop",
-            row.get("violation_code"),
+            violation_code,
+            violation_description,
             issue_date,
             format_location(row),
         ))
