@@ -232,40 +232,11 @@ function DMVDashboard() {
   return (
     <div className="dmv-dashboard">
       {/* HEADER */}
-      <header className="dmv-header">
-        <div className="header-left">
-          <div className="dmv-logo">
-            <span className="logo-text">NY DMV — ISA Enforcement Command</span>
-          </div>
-        </div>
-        <div className="header-right">
-          <div className="header-tabs">
-            <button 
-              className={`header-tab ${activeTab === 'dashboard' ? 'active' : ''}`}
-              onClick={() => setActiveTab('dashboard')}
-            >
-              Dashboard
-            </button>
-            <button 
-              className={`header-tab ${activeTab === 'courts' ? 'active' : ''}`}
-              onClick={() => setActiveTab('courts')}
-            >
-              Court Adapter
-            </button>
-          </div>
-          <button className="nav-link" onClick={() => navigate('/map')}>Camera Network</button>
+      <header className="dmv-header centered">
+        <div className="dmv-logo">
+          <span className="logo-text">NY DMV — ISA Enforcement Command</span>
         </div>
       </header>
-
-      {/* POLICY BAR */}
-      <div className="policy-banner">
-        <div className="policy-badge">
-          <span className="policy-version">Policy {policy?.version || '0.1-draft'}</span>
-          <span className="policy-rule">ISA Notice: ≥{policy?.isa_points_threshold || 11} pts OR ≥{policy?.isa_ticket_threshold || 16} tickets</span>
-          <span className="policy-counter">Monitoring: &lt;{policy?.isa_points_threshold || 11} pts, &lt;{policy?.isa_ticket_threshold || 16} tickets</span>
-          <span className="policy-counter">Super Speeder: ≥3 violations</span>
-        </div>
-      </div>
 
       {activeTab === 'dashboard' ? (
       <div className="dmv-content">
@@ -504,6 +475,52 @@ function DMVDashboard() {
           ↑
         </button>
       )}
+
+      {/* FOOTER NAVIGATION - Instagram Style */}
+      <nav className="footer-nav">
+        <button 
+          className={`footer-nav-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
+          onClick={() => setActiveTab('dashboard')}
+        >
+          <div className="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke={activeTab === 'dashboard' ? "#fff" : "#888"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1" fill={activeTab === 'dashboard' ? "#fff" : "none"}/>
+              <rect x="14" y="3" width="7" height="7" rx="1" fill={activeTab === 'dashboard' ? "#fff" : "none"}/>
+              <rect x="3" y="14" width="7" height="7" rx="1" fill={activeTab === 'dashboard' ? "#fff" : "none"}/>
+              <rect x="14" y="14" width="7" height="7" rx="1" fill={activeTab === 'dashboard' ? "#fff" : "none"}/>
+            </svg>
+          </div>
+          <span className="nav-label">Dashboard</span>
+        </button>
+        
+        <button 
+          className={`footer-nav-btn ${activeTab === 'courts' ? 'active' : ''}`}
+          onClick={() => setActiveTab('courts')}
+        >
+          <div className="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke={activeTab === 'courts' ? "#fff" : "#888"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" fill={activeTab === 'courts' ? "#fff" : "none"}/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <span className="nav-label">Court Adapter</span>
+        </button>
+        
+        <button 
+          className="footer-nav-btn"
+          onClick={() => navigate('/map')}
+        >
+          <div className="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 7l-7 5 7 5V7z" fill="none"/>
+              <rect x="1" y="5" width="15" height="14" rx="2" fill="none"/>
+              <circle cx="8" cy="12" r="2" stroke="#888" fill="none"/>
+            </svg>
+          </div>
+          <span className="nav-label">Camera Network</span>
+        </button>
+      </nav>
     </div>
   );
 }

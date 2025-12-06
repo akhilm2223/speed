@@ -620,6 +620,34 @@ function MapContent() {
 }
 
 // ============================================
+// FOOTER NAV ICONS (SVG)
+// ============================================
+const DashboardIcon = ({ active }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke={active ? "#fff" : "#888"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="7" height="7" rx="1" fill={active ? "#fff" : "none"}/>
+    <rect x="14" y="3" width="7" height="7" rx="1" fill={active ? "#fff" : "none"}/>
+    <rect x="3" y="14" width="7" height="7" rx="1" fill={active ? "#fff" : "none"}/>
+    <rect x="14" y="14" width="7" height="7" rx="1" fill={active ? "#fff" : "none"}/>
+  </svg>
+);
+
+const CourtIcon = ({ active }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke={active ? "#fff" : "#888"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2L2 7l10 5 10-5-10-5z" fill={active ? "#fff" : "none"}/>
+    <path d="M2 17l10 5 10-5"/>
+    <path d="M2 12l10 5 10-5"/>
+  </svg>
+);
+
+const CameraIcon = ({ active }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke={active ? "#fff" : "#888"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M23 7l-7 5 7 5V7z" fill={active ? "#fff" : "none"}/>
+    <rect x="1" y="5" width="15" height="14" rx="2" fill={active ? "#fff" : "none"}/>
+    <circle cx="8" cy="12" r="2" stroke={active ? "#1a1a1a" : "#888"} fill="none"/>
+  </svg>
+);
+
+// ============================================
 // MAIN TABBED APP
 // ============================================
 function TabbedApp() {
@@ -644,34 +672,45 @@ function TabbedApp() {
         </div>
       </header>
 
-      {/* TABS */}
-      <div className="tabs-nav">
-        <button 
-          className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
-          onClick={() => navigate('/')}
-        >
-          📊 Dashboard
-        </button>
-        <button 
-          className={`tab-btn ${activeTab === 'courts' ? 'active' : ''}`}
-          onClick={() => navigate('/courts')}
-        >
-          ⚖️ Local Court Adapter
-        </button>
-        <button 
-          className={`tab-btn ${activeTab === 'map' ? 'active' : ''}`}
-          onClick={() => navigate('/map')}
-        >
-          🗺️ Map
-        </button>
-      </div>
-
       {/* TAB CONTENT */}
       <div className="tab-panel">
         {activeTab === 'dashboard' && <DMVDashboardContent />}
         {activeTab === 'courts' && <LocalCourtAdapterContent />}
         {activeTab === 'map' && <MapContent />}
       </div>
+
+      {/* FOOTER NAVIGATION - Instagram Style */}
+      <nav className="footer-nav">
+        <button 
+          className={`footer-nav-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
+          onClick={() => navigate('/')}
+        >
+          <div className="nav-icon">
+            <DashboardIcon active={activeTab === 'dashboard'} />
+          </div>
+          <span className="nav-label">Dashboard</span>
+        </button>
+        
+        <button 
+          className={`footer-nav-btn ${activeTab === 'courts' ? 'active' : ''}`}
+          onClick={() => navigate('/courts')}
+        >
+          <div className="nav-icon">
+            <CourtIcon active={activeTab === 'courts'} />
+          </div>
+          <span className="nav-label">Court Adapter</span>
+        </button>
+        
+        <button 
+          className={`footer-nav-btn ${activeTab === 'map' ? 'active' : ''}`}
+          onClick={() => navigate('/map')}
+        >
+          <div className="nav-icon">
+            <CameraIcon active={activeTab === 'map'} />
+          </div>
+          <span className="nav-label">Camera Network</span>
+        </button>
+      </nav>
     </div>
   );
 }

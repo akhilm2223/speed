@@ -38,6 +38,125 @@
   font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 15px;
   line-height: 1.6;
+  padding-bottom: 85px; /* Space for footer nav */
+}
+
+/* ============================================
+   FOOTER NAVIGATION - Instagram Style
+   ============================================ */
+.footer-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 70px;
+  background: linear-gradient(to top, #0a0a0a 0%, rgba(10, 10, 10, 0.98) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  z-index: 9999;
+  padding: 0 10px;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.footer-nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 20px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  min-width: 80px;
+  position: relative;
+}
+
+.footer-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.footer-nav-btn:active {
+  transform: scale(0.95);
+}
+
+.footer-nav-btn .nav-icon {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+
+.footer-nav-btn .nav-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.footer-nav-btn .nav-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: #666;
+  letter-spacing: 0.3px;
+  transition: color 0.2s ease;
+}
+
+.footer-nav-btn.active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.footer-nav-btn.active .nav-label {
+  color: #fff;
+  font-weight: 600;
+}
+
+.footer-nav-btn.active .nav-icon {
+  transform: scale(1.1);
+}
+
+/* Active indicator dot */
+.footer-nav-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  width: 4px;
+  height: 4px;
+  background: #fff;
+  border-radius: 50%;
+  animation: footerDotFadeIn 0.3s ease forwards;
+}
+
+@keyframes footerDotFadeIn {
+  from { opacity: 0; transform: scale(0); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Mobile adjustments */
+@media (max-width: 480px) {
+  .footer-nav {
+    height: 65px;
+  }
+  
+  .footer-nav-btn {
+    padding: 6px 15px;
+    min-width: 70px;
+  }
+  
+  .footer-nav-btn .nav-icon {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .footer-nav-btn .nav-label {
+    font-size: 9px;
+  }
 }
 
 /* Loading State */
@@ -74,6 +193,10 @@
   padding: 16px 24px;
   background: linear-gradient(180deg, #1a1a1a 0%, #111 100%);
   border-bottom: 1px solid #2a2a2a;
+}
+
+.dmv-header.centered {
+  justify-content: center;
 }
 
 .header-left {
