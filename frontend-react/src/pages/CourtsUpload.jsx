@@ -49,7 +49,12 @@ function CourtsUpload() {
       });
       
       const data = await res.json();
-      setResult(data);
+      
+      if (!res.ok) {
+        setResult({ error: data.error || 'Upload failed', ...data });
+      } else {
+        setResult(data);
+      }
     } catch (err) {
       setResult({ error: err.message });
     } finally {
@@ -82,15 +87,28 @@ function CourtsUpload() {
           </p>
 
           <div className="expected-format">
-            <h4>Expected CSV Format:</h4>
+            <h4>Required CSV Columns:</h4>
+            <div className="format-section">
+              <h5>Required Fields:</h5>
             <div className="format-columns">
-              <span className="col-tag">plate_id</span>
-              <span className="col-tag">violation_code</span>
-              <span className="col-tag">violation_date</span>
-              <span className="col-tag">ticket_issuer</span>
-              <span className="col-tag">county</span>
-              <span className="col-tag">police_agency</span>
-              <span className="col-tag">disposition</span>
+                <span className="col-tag required">driver_license_number</span>
+                <span className="col-tag required">driver_full_name</span>
+                <span className="col-tag required">date_of_birth</span>
+                <span className="col-tag required">license_state</span>
+                <span className="col-tag required">plate_id</span>
+                <span className="col-tag required">plate_state</span>
+                <span className="col-tag required">violation_code</span>
+                <span className="col-tag required">date_of_violation</span>
+                <span className="col-tag required">disposition</span>
+                <span className="col-tag required">latitude</span>
+                <span className="col-tag required">longitude</span>
+                <span className="col-tag required">police_agency</span>
+                <span className="col-tag required">ticket_issuer</span>
+              </div>
+            </div>
+            <div className="format-note">
+              <p><strong>Note:</strong> All fields are required. Date format: <code>YYYY-MM-DD HH:MM:SS</code> or <code>YYYY-MM-DD</code></p>
+              <p><strong>Violation Codes:</strong> 1180A (1-10 mph), 1180B (11-20 mph), 1180C (21-30 mph), 1180D (31+ mph), 1180E (school zone), 1180F (work zone)</p>
             </div>
           </div>
 
@@ -146,12 +164,25 @@ function CourtsUpload() {
           {result && (
             <div className={`upload-result ${result.error ? 'error' : 'success'}`}>
               {result.error ? (
-                <p>❌ Error: {result.error}</p>
+                <>
+                  <p>❌ <strong>Error:</strong> {result.error}</p>
+                  {result.first_error && (
+                    <p className="error-detail">Details: {result.first_error}</p>
+                  )}
+                </>
               ) : (
                 <>
-                  <p>✅ {result.message}</p>
-                  {result.columns_detected && (
-                    <p>Columns: {result.columns_detected.join(', ')}</p>
+                  <p>✅ <strong>{result.message || 'Upload successful!'}</strong></p>
+                  {result.inserted !== undefined && (
+                    <div className="upload-stats">
+                      <p>📊 Records inserted: <strong>{result.inserted}</strong></p>
+                      {result.errors > 0 && (
+                        <p>⚠️ Errors: <strong>{result.errors}</strong></p>
+                      )}
+                      {result.filename && (
+                        <p>📄 File: {result.filename}</p>
+                      )}
+                    </div>
                   )}
                 </>
               )}
@@ -164,8 +195,9 @@ function CourtsUpload() {
           <div className="info-section">
             <h4>For Local Courts:</h4>
             <ul>
-              <li>Export violation records as CSV</li>
-              <li>Include all required columns</li>
+              <li>Export violation records as CSV with all required columns</li>
+              <li>Ensure dates are in format: <code>YYYY-MM-DD HH:MM:SS</code></li>
+              <li>Coordinates (latitude/longitude) must be valid decimal numbers</li>
               <li>Upload monthly or as needed</li>
             </ul>
           </div>

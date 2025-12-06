@@ -66,7 +66,28 @@ python seed_cameras_simple.py
 
 **Note:** The data generation script fetches real violations from NY State Open Data API (data.ny.gov). For large datasets (1M+), consider using a SODA API app token for higher rate limits (see `generate_ny_state_violations.py` for details).
 
-### 5. Start Application
+### 5. (Optional) Generate Sample Court CSV
+```bash
+# Generate a sample court CSV file for testing
+python generate_sample_court_csv.py
+
+# Generate with custom count and output file
+python generate_sample_court_csv.py --count 500 --output my_court.csv
+
+# Generate for a specific court (by index)
+python generate_sample_court_csv.py --count 1000 --court-index 0
+```
+
+### 6. (Optional) Ingest Court CSV via Command Line
+```bash
+# Ingest a court CSV file into the database
+python ingest_court_csv.py court_violations.csv
+
+# Ingest with custom batch size
+python ingest_court_csv.py --file my_court_data.csv --batch-size 500
+```
+
+### 7. Start Application
 ```bash
 # Terminal 1: Backend
 python api.py
@@ -76,11 +97,12 @@ cd frontend-react
 npm start
 ```
 
-### 6. Access Application
+### 8. Access Application
 | URL | Description |
 |-----|-------------|
 | **http://localhost:3000/dmv** | 🛡️ DMV Dashboard |
 | **http://localhost:3000/map** | 🗺️ Violation Map |
+| **http://localhost:3000/courts-upload** | 📤 Local Court CSV Upload |
 | **http://localhost:3000/dmv/drivers/:plateId** | 👤 Driver Profile |
 
 ---
@@ -112,11 +134,18 @@ npm start
 ## 🔍 How It Works
 
 ### 1. Data Ingestion
-- Fetches violations from **NY State Open Data** (data.ny.gov)
+- **NY State Open Data** (data.ny.gov)
   - Dataset: Traffic Tickets Issued: Four Year Window (10.7M records, Updated Apr 2025)
   - Covers all 62 counties, 1,800+ courts, 700+ police agencies
-- Stores in PostgreSQL with driver info, coordinates, and court data
-- Supports CSV upload from local courts via `/courts-upload` page
+  - Script: `generate_ny_state_violations.py`
+- **Local Court CSV Upload**
+  - Web interface: `/courts-upload` page for drag-and-drop CSV uploads
+  - Command-line tool: `ingest_court_csv.py` for batch processing
+  - Sample generator: `generate_sample_court_csv.py` for testing
+  - Validates required fields, processes violations, and updates driver summaries
+- **NYC Open Data** (optional)
+  - Script: `ingest.py` for NYC parking violations
+- All data stored in PostgreSQL with driver info, coordinates, and court data
 
 ### 2. Risk Calculation
 ```python
@@ -156,7 +185,14 @@ NEW → NOTICE_SENT → FOLLOW_UP_DUE → COMPLIANT
 - **KPI Cards** - ISA required, monitoring, super speeders
 - **County Risk Cards** - Top risk counties, most severe violations
 - **Enforcement Queue** - Sortable table with risk badges and batch actions
-- **Local Courts Panel** - 1,021 counties, 1,308 courts supported
+- **Local Courts Panel** - 1,800+ courts supported statewide
+
+### Local Court CSV Upload
+- **Web Interface** - Drag-and-drop CSV file upload with preview
+- **Validation** - Real-time CSV structure validation and error reporting
+- **Batch Processing** - Efficient bulk insertion with progress tracking
+- **Auto-Integration** - Automatically updates driver summaries and generates ISA alerts
+- **Sample Generator** - `generate_sample_court_csv.py` creates realistic test data
 
 ### Driver Profile
 - **Crash Risk Score** - 0-100 with color-coded danger levels
@@ -181,13 +217,17 @@ Stop-Super-Speeders/
 ├── isa_policy.py                   # ISA policy & risk calculation
 ├── generate_ny_state_violations.py # NY State data ingestion
 ├── ingest.py                       # NYC Open Data ingestion
+├── generate_sample_court_csv.py    # Generate sample court CSV files
+├── ingest_court_csv.py             # Command-line court CSV ingestion
 ├── cv_detector.py                  # AI camera detection (YOLO)
 ├── seed_cameras_simple.py          # Seed camera locations
 ├── requirements.txt                # Python dependencies
 ├── .env                            # Database config
+├── new_york_state_coordinates.csv  # NY state coordinate data
 │
 ├── sql/
-│   └── schema.sql                  # Database schema
+│   ├── schema.sql                  # Database schema
+│   └── migrate_alerts.sql          # Migration scripts
 │
 └── frontend-react/
     ├── package.json                # Node dependencies
@@ -199,10 +239,10 @@ Stop-Super-Speeders/
         │   ├── DMVDashboard.jsx    # Main dashboard
         │   ├── DriverProfile.jsx   # Driver details
         │   ├── MapView.jsx         # Violation map
-        │   └── CourtsUpload.jsx    # CSV upload
+        │   └── CourtsUpload.jsx    # CSV upload interface
         └── components/
             ├── CameraMarker.jsx    # Map camera icons
-            ├── CameraModal.jsx      # Video detection modal
+            ├── CameraModal.jsx     # Video detection modal
             └── DriversSidebar.jsx  # Driver list sidebar
 ```
 
@@ -220,6 +260,7 @@ Stop-Super-Speeders/
 | `POST /alerts/<id>/transition` | Update enforcement status |
 | `GET /county-stats` | County-level analytics |
 | `GET /impact-metrics` | Lives saved estimates |
+| `POST /local-courts/upload` | Upload court CSV file (web interface) |
 
 ### Map & Cameras (`/api`)
 | Endpoint | Description |
@@ -238,7 +279,7 @@ Stop-Super-Speeders/
 **Data Sources:** 
 - NY State Open Data (data.ny.gov) - Traffic Tickets Issued dataset
 - NYC Open Data - Parking violations
-- Local court CSV uploads
+- Local court CSV uploads (web interface + command-line tool)
 
 **AI/CV:** OpenCV, YOLO (simulated for demo)
 
@@ -255,11 +296,43 @@ The system uses a unified schema with these main tables:
 
 See `sql/schema.sql` for full schema definition.
 
+## 📝 Court CSV Format
+
+Local courts can upload violation data via CSV with the following required columns:
+
+**Required Fields:**
+- `driver_license_number` - Driver license number
+- `driver_full_name` - Full name of driver
+- `date_of_birth` - Date of birth (YYYY-MM-DD)
+- `license_state` - License state (default: NY)
+- `plate_id` - License plate number
+- `plate_state` - Plate state (default: NY)
+- `violation_code` - Violation code (1180A, 1180B, 1180C, 1180D, 1180E, 1180F)
+- `date_of_violation` - Violation date (YYYY-MM-DD HH:MM:SS or YYYY-MM-DD)
+- `disposition` - Disposition (GUILTY, NOT GUILTY, DISMISSED, PENDING)
+- `latitude` - Violation latitude (decimal)
+- `longitude` - Violation longitude (decimal)
+- `police_agency` - Issuing police agency
+- `ticket_issuer` - Court name
+
+**Example Usage:**
+```bash
+# Generate sample CSV
+python generate_sample_court_csv.py --count 1000 --output court_data.csv
+
+# Upload via web interface
+# Navigate to http://localhost:3000/courts-upload
+
+# Or ingest via command line
+python ingest_court_csv.py court_data.csv
+```
+
 ## ⚠️ Known Issues & Notes
 
 - **Driver Summary Count:** The `driver_license_summary` table may show high counts if data generation creates too many unique drivers. This is expected with the current data generation approach.
 - **Data Volume:** Loading 1M+ violations may take 10-20 minutes depending on API rate limits. Use `--app-token` flag for higher limits.
 - **AI Camera Detection:** Currently uses simulated YOLO detection. For production, integrate with real YOLO/OCR models.
+- **CSV Upload:** Large CSV files (>10K rows) should use the command-line tool (`ingest_court_csv.py`) for better performance. The web interface is optimized for smaller files.
 
 ---
 

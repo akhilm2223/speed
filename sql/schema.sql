@@ -18,13 +18,13 @@ CREATE TABLE IF NOT EXISTS violations (
     plate_state           VARCHAR(10) NOT NULL,
     violation_code        VARCHAR(64) NOT NULL,
     date_of_violation     TIMESTAMPTZ NOT NULL,
-    disposition           VARCHAR(64),
-    latitude              DECIMAL(10, 8),
-    longitude             DECIMAL(11, 8),
-    police_agency         VARCHAR(128),
-    ticket_issuer         VARCHAR(128),
-    source_type           VARCHAR(64),
-    created_at            TIMESTAMPTZ DEFAULT NOW(),
+    disposition           VARCHAR(64) NOT NULL,
+    latitude              DECIMAL(10, 8) NOT NULL,
+    longitude             DECIMAL(11, 8) NOT NULL,
+    police_agency         VARCHAR(128) NOT NULL,
+    ticket_issuer         VARCHAR(128) NOT NULL,
+    source_type           VARCHAR(64) NOT NULL,
+    created_at            TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     FOREIGN KEY (plate_id, plate_state) REFERENCES vehicles (plate_id, registration_state) ON DELETE CASCADE
 );
 

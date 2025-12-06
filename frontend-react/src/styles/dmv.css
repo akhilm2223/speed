@@ -2501,35 +2501,41 @@ html, body, #root {
 
 .upload-container {
   display: flex;
+  flex-direction: column;
   gap: 30px;
   padding: 30px;
-  max-width: 1200px;
+  max-width: 900px;
   margin: 0 auto;
+  align-items: center;
 }
 
 .upload-card {
-  flex: 2;
   background: #1e293b;
   border-radius: 12px;
   padding: 30px;
   border: 1px solid #334155;
+  width: 100%;
+  max-width: 800px;
 }
 
 .upload-card h2 {
   color: #fff;
   margin-bottom: 10px;
+  text-align: center;
 }
 
 .upload-desc {
   color: #94a3b8;
   margin-bottom: 25px;
+  text-align: center;
 }
 
 .expected-format {
   background: #0f172a;
-  padding: 15px;
+  padding: 20px;
   border-radius: 8px;
   margin-bottom: 25px;
+  width: 100%;
 }
 
 .expected-format h4 {
@@ -2537,12 +2543,14 @@ html, body, #root {
   font-size: 12px;
   text-transform: uppercase;
   margin-bottom: 10px;
+  text-align: center;
 }
 
 .format-columns {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  justify-content: center;
 }
 
 .col-tag {
@@ -2554,8 +2562,68 @@ html, body, #root {
   font-family: monospace;
 }
 
+.col-tag.required {
+  background: #1e3a5f;
+  color: #60a5fa;
+  border: 1px solid #3b82f6;
+}
+
+.format-section {
+  margin-bottom: 15px;
+}
+
+.format-section h5 {
+  color: #94a3b8;
+  font-size: 11px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.format-note {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #334155;
+  text-align: center;
+}
+
+.format-note p {
+  color: #64748b;
+  font-size: 12px;
+  margin: 5px 0;
+  line-height: 1.5;
+}
+
+.format-note code {
+  background: #0f172a;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: #60a5fa;
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.upload-stats {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.upload-stats p {
+  margin: 5px 0;
+  font-size: 13px;
+}
+
+.error-detail {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #fca5a5;
+}
+
 .file-input-area {
   margin-bottom: 20px;
+  width: 100%;
 }
 
 .file-input {
@@ -2581,6 +2649,7 @@ html, body, #root {
 
 .preview-section {
   margin-bottom: 20px;
+  width: 100%;
 }
 
 .preview-section h4 {
@@ -2594,6 +2663,7 @@ html, body, #root {
   overflow-x: auto;
   background: #0f172a;
   border-radius: 8px;
+  width: 100%;
 }
 
 .preview-table {
@@ -2657,12 +2727,12 @@ html, body, #root {
 }
 
 .upload-info-card {
-  flex: 1;
   background: #1e293b;
   border-radius: 12px;
   padding: 25px;
   border: 1px solid #334155;
-  height: fit-content;
+  width: 100%;
+  max-width: 800px;
 }
 
 .upload-info-card h3 {

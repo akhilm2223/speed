@@ -974,6 +974,7 @@ def upload_local_court_csv():
         
         inserted_count = 0
         error_count = 0
+        first_error = None
         
         # Detect format (simple vs full)
         headers = rows[0].keys()
@@ -1005,16 +1006,27 @@ def upload_local_court_csv():
                 violation_code = row.get('violation_code') or "1180D"
                 
                 if is_full_format:
-                    # Use all fields if available
-                    driver_license = row.get('driver_license_number')
-                    driver_name = row.get('driver_full_name')
-                    dob = row.get('date_of_birth')
-                    license_state = row.get('license_state', 'NY')
-                    disposition = row.get('disposition', 'GUILTY')
-                    lat = row.get('latitude', 0)
-                    lng = row.get('longitude', 0)
-                    police_agency = row.get('police_agency', 'Unknown')
+                    # Use all fields if available - validate required fields
+                    driver_license = row.get('driver_license_number', '').strip()
+                    driver_name = row.get('driver_full_name', '').strip()
+                    dob = row.get('date_of_birth', '').strip()
+                    
+                    if not driver_license or not driver_name or not dob:
+                        raise ValueError(f"Missing required field: driver_license_number, driver_full_name, or date_of_birth")
+                    
+                    license_state = row.get('license_state', 'NY').strip()
+                    disposition = row.get('disposition', 'GUILTY').strip()
+                    
+                    try:
+                        lat = float(row.get('latitude', 0) or 0)
+                        lng = float(row.get('longitude', 0) or 0)
+                    except (ValueError, TypeError):
+                        raise ValueError(f"Invalid coordinates: latitude={row.get('latitude')}, longitude={row.get('longitude')}")
+                    
+                    police_agency = row.get('police_agency', 'Unknown').strip()
                     ticket_issuer = row.get('court') or row.get('ticket_issuer', 'Unknown')
+                    if ticket_issuer:
+                        ticket_issuer = ticket_issuer.strip()
                 else:
                     # Defaults for simple format
                     driver_license = "UNKNOWN"
@@ -1022,10 +1034,17 @@ def upload_local_court_csv():
                     dob = "1980-01-01"
                     license_state = "NY"
                     disposition = row.get('disposition', 'GUILTY')
-                    lat = 0
-                    lng = 0
+                    lat = 0.0
+                    lng = 0.0
                     police_agency = row.get('police_agency', 'Local Police')
                     ticket_issuer = row.get('court') or row.get('ticket_issuer', 'Local Court')
+
+                # Ensure vehicle exists (required for foreign key)
+                cur.execute("""
+                    INSERT INTO vehicles (plate_id, registration_state)
+                    VALUES (%s, %s)
+                    ON CONFLICT DO NOTHING
+                """, (plate_id, plate_state))
 
                 # Insert into DB
                 cur.execute("""
@@ -1045,11 +1064,40 @@ def upload_local_court_csv():
                 inserted_count += 1
                 
             except Exception as e:
-                print(f"Error row {inserted_count}: {e}")
+                error_msg = str(e)
+                print(f"Error processing row {inserted_count + error_count + 1}: {error_msg}")
                 if error_count == 0:
-                    first_error = str(e)
+                    first_error = error_msg
                 error_count += 1
                 continue
+        
+        # Update driver license summaries
+        cur.execute("""
+            INSERT INTO driver_license_summary (driver_license_number, license_state, total_speeding_tickets, points_on_license)
+            SELECT 
+                driver_license_number,
+                license_state,
+                COUNT(*),
+                SUM(CASE 
+                    WHEN disposition = 'GUILTY' THEN
+                        CASE 
+                            WHEN violation_code = '1180A' THEN 3
+                            WHEN violation_code = '1180B' THEN 4
+                            WHEN violation_code = '1180C' THEN 6
+                            WHEN violation_code = '1180D' THEN 8
+                            WHEN violation_code IN ('1180E', '1180F') THEN 7
+                            ELSE 0
+                        END
+                    ELSE 0
+                END)
+            FROM violations
+            WHERE violation_code LIKE '1180%'
+            GROUP BY driver_license_number, license_state
+            ON CONFLICT (driver_license_number, license_state) DO UPDATE SET
+                total_speeding_tickets = EXCLUDED.total_speeding_tickets,
+                points_on_license = EXCLUDED.points_on_license,
+                updated_at = NOW()
+        """)
         
         conn.commit()
         cur.close()
