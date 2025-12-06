@@ -2606,6 +2606,11 @@ select:focus {
   margin-bottom: 30px;
 }
 
+.courts-grid.single {
+  grid-template-columns: 1fr;
+  max-width: 500px;
+}
+
 .courts-card {
   background: #1a1a1a;
   border: 1px solid #2a2a2a;

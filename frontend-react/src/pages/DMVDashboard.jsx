@@ -946,19 +946,8 @@ function DMVDashboard() {
               </div>
             )}
 
-            {/* Courts Lists */}
-            <div className="courts-grid">
-              <div className="courts-card">
-                <h3>Most Active Counties</h3>
-                <div className="courts-list">
-                  {localCourts?.top_counties?.slice(0, 10).map((c, i) => (
-                    <div key={i} className="court-list-item">
-                      <span className="court-name">{c.county}</span>
-                      <span className="court-count">{c.count?.toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            {/* Top Ticket Issuers */}
+            <div className="courts-grid single">
               <div className="courts-card">
                 <h3>Top Ticket Issuers</h3>
                 <div className="courts-list">
