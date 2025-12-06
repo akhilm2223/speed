@@ -95,18 +95,55 @@ def get_stats():
 def get_heatmap():
     """Get heatmap points from violations with coordinates and severity."""
     try:
-        limit = request.args.get('limit', 1000000, type=int)
+        limit = request.args.get('limit', 50000, type=int)
+        region = request.args.get('region', 'all')  # 'all', 'nyc', 'suffolk'
+        
         conn = get_db()
         cur = conn.cursor()
 
-        # Use columns that actually exist in schema.sql
-        cur.execute("""
-            SELECT latitude, longitude, violation_code, 
-                   date_of_violation, plate_id, plate_state, police_agency
-            FROM violations
-            WHERE latitude IS NOT NULL AND longitude IS NOT NULL
-            LIMIT %s
-        """, (limit,))
+        # Region bounds
+        # NYC: 40.49-40.92 lat, -74.26 to -73.70 lon
+        # Suffolk County: 40.66-41.16 lat, -73.50 to -71.85 lon
+        
+        if region == 'nyc':
+            cur.execute("""
+                SELECT latitude, longitude, violation_code, 
+                       date_of_violation, plate_id, plate_state, police_agency
+                FROM violations
+                WHERE latitude BETWEEN 40.49 AND 40.92
+                  AND longitude BETWEEN -74.26 AND -73.70
+                LIMIT %s
+            """, (limit,))
+        elif region == 'suffolk':
+            cur.execute("""
+                SELECT latitude, longitude, violation_code, 
+                       date_of_violation, plate_id, plate_state, police_agency
+                FROM violations
+                WHERE latitude BETWEEN 40.66 AND 41.16
+                  AND longitude BETWEEN -73.50 AND -71.85
+                LIMIT %s
+            """, (limit,))
+        else:
+            # Statewide: Get balanced sample from NYC + rest of state
+            # First get NYC points, then fill with rest of state
+            nyc_limit = limit // 2  # Half from NYC
+            other_limit = limit - nyc_limit  # Half from rest of state
+            
+            cur.execute("""
+                (SELECT latitude, longitude, violation_code, 
+                        date_of_violation, plate_id, plate_state, police_agency
+                 FROM violations
+                 WHERE latitude BETWEEN 40.49 AND 40.92
+                   AND longitude BETWEEN -74.26 AND -73.70
+                 LIMIT %s)
+                UNION ALL
+                (SELECT latitude, longitude, violation_code, 
+                        date_of_violation, plate_id, plate_state, police_agency
+                 FROM violations
+                 WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+                   AND NOT (latitude BETWEEN 40.49 AND 40.92 AND longitude BETWEEN -74.26 AND -73.70)
+                 LIMIT %s)
+            """, (nyc_limit, other_limit))
 
         def get_severity_from_code(code):
             """Map violation code to severity intensity (0.0-1.0)."""
@@ -348,9 +385,10 @@ MAX_RECENT_DETECTIONS = 50
 @app.route('/api/cameras/<camera_id>/detect', methods=['POST'])
 def run_detection(camera_id):
     """
-    Process a dynamically detected violation from the frontend YOLO simulation.
-    Creates real violation records and DMV alerts for high-risk drivers.
-    Integrates with DMV enforcement workflow.
+    Process a detected violation from the CV pipeline.
+    Uses REAL OCR plates and REAL speed estimation.
+    Creates violation records and DMV alerts for high-risk drivers.
+    Links to existing drivers or creates stable synthetic drivers.
     """
     try:
         data = request.json
@@ -361,16 +399,21 @@ def run_detection(camera_id):
         speed_limit = data.get('speed_limit', 30)
         violation_type = data.get('violation_type', 'speeding')
         corridor_name = data.get('corridor_name')
+        ocr_confidence = data.get('ocr_confidence', 0.0)
         
         if not plate_id:
             return jsonify({"error": "plate_id required"}), 400
+        
+        # Validate plate format (OCR result or tracking-based ID)
+        if not re.match(r'^[A-Z0-9\-]{5,12}$', plate_id):
+            return jsonify({"error": "Invalid plate format"}), 400
         
         conn = get_db()
         cur = conn.cursor()
         
         # Get camera info
         cur.execute("""
-            SELECT latitude, longitude, zone_type, name, borough
+            SELECT latitude, longitude, zone_type, name, borough, speed_limit
             FROM cameras WHERE camera_id = %s
         """, (camera_id,))
         cam_row = cur.fetchone()
@@ -382,6 +425,10 @@ def run_detection(camera_id):
         cam_lat, cam_lng, zone_type, cam_name, borough = (
             float(cam_row[0]), float(cam_row[1]), cam_row[2], cam_row[3], cam_row[4] or "NYC"
         )
+        # Use camera's configured speed limit if not provided
+        if speed_limit == 30 and cam_row[5]:
+            speed_limit = cam_row[5]
+        
         corridor = corridor_name or cam_name
         
         # Calculate violation code based on speed over limit
@@ -404,6 +451,47 @@ def run_detection(camera_id):
             violation_code = "1180E" if zone_type == 'school_zone' else "1180F"
             points = 6
         
+        # === REAL PLATE MATCHING & DRIVER LINKAGE ===
+        
+        # Check if this plate already exists in our system
+        cur.execute("""
+            SELECT v.driver_license_number, v.driver_full_name, v.date_of_birth
+            FROM violations v
+            WHERE v.plate_id = %s AND v.plate_state = 'NY'
+            ORDER BY v.date_of_violation DESC
+            LIMIT 1
+        """, (plate_id,))
+        existing_driver = cur.fetchone()
+        
+        if existing_driver:
+            # Use existing driver info - this plate was seen before
+            driver_license_number = existing_driver[0]
+            driver_full_name = existing_driver[1]
+            date_of_birth = existing_driver[2]
+            print(f"  → Linked to existing driver: {driver_license_number}")
+        else:
+            # Create stable synthetic driver for this NEW plate
+            # Generate deterministic ID from plate (so same plate = same driver)
+            import hashlib
+            plate_hash = hashlib.md5(plate_id.encode()).hexdigest()[:9].upper()
+            driver_license_number = plate_hash
+            
+            # Generate stable name from plate hash
+            first_names = ["JOHN", "JANE", "MICHAEL", "SARAH", "DAVID", "EMILY", "ROBERT", "JESSICA"]
+            last_names = ["SMITH", "JOHNSON", "WILLIAMS", "BROWN", "JONES", "GARCIA", "MILLER", "DAVIS"]
+            name_idx = int(plate_hash[:2], 16) % len(first_names)
+            surname_idx = int(plate_hash[2:4], 16) % len(last_names)
+            driver_full_name = f"{first_names[name_idx]} {last_names[surname_idx]}"
+            
+            # Generate stable DOB from plate hash
+            from datetime import date
+            year = 1950 + (int(plate_hash[4:6], 16) % 50)
+            month = 1 + (int(plate_hash[6:7], 16) % 12)
+            day = 1 + (int(plate_hash[7:8], 16) % 28)
+            date_of_birth = date(year, month, day)
+            
+            print(f"  → Created new synthetic driver: {driver_license_number} ({driver_full_name})")
+        
         # Ensure vehicle exists
         cur.execute("""
             INSERT INTO vehicles (plate_id, registration_state) 
@@ -413,8 +501,7 @@ def run_detection(camera_id):
         # Get screenshot path if provided
         screenshot_path = data.get('screenshot_path')
         
-        # Create REAL violation record (same as NYC Open Data format)
-        location = f"{borough}, ({cam_lat}, {cam_lng})"
+        # Create violation record with REAL driver linkage
         cur.execute("""
             INSERT INTO violations (
                 driver_license_number, driver_full_name, date_of_birth, license_state,
@@ -424,27 +511,37 @@ def run_detection(camera_id):
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s, %s, %s, %s, %s)
             RETURNING violation_id
         """, (
-            'UNKNOWN', 'UNKNOWN', '1980-01-01', 'NY',
+            driver_license_number, driver_full_name, date_of_birth, 'NY',
             plate_id, 'NY', violation_code, 'GUILTY',
             cam_lat, cam_lng,
             f"Camera {camera_id}", corridor, 'camera'
         ))
         violation_id = cur.fetchone()[0]
         
-        # Store AI violation with screenshot
+        # Store AI violation with screenshot and OCR confidence
         cur.execute("""
             INSERT INTO ai_violations (
                 violation_id, camera_id, plate_id, violation_type,
                 points, speed_detected, speed_limit, latitude, longitude,
-                screenshot_path
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                screenshot_path, ocr_confidence
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             violation_id, camera_id, plate_id, violation_type,
             points, speed_detected, speed_limit, cam_lat, cam_lng,
-            screenshot_path
+            screenshot_path, ocr_confidence
         ))
         
-        # Get updated driver stats from violations table
+        # Update driver license summary
+        cur.execute("""
+            INSERT INTO driver_license_summary (driver_license_number, license_state, total_speeding_tickets, points_on_license)
+            VALUES (%s, 'NY', 1, %s)
+            ON CONFLICT (driver_license_number, license_state) DO UPDATE SET
+                total_speeding_tickets = driver_license_summary.total_speeding_tickets + 1,
+                points_on_license = driver_license_summary.points_on_license + %s,
+                updated_at = NOW()
+        """, (driver_license_number, points, points))
+        
+        # Get updated driver stats from violations table (using driver_license_number for accurate tracking)
         cur.execute("""
             SELECT 
                 COUNT(*) as total_tickets,
@@ -462,8 +559,8 @@ def run_detection(camera_id):
                 ) as night_violations,
                 COUNT(DISTINCT police_agency) as borough_count
             FROM violations
-            WHERE plate_id = %s AND plate_state = 'NY'
-        """, (plate_id,))
+            WHERE driver_license_number = %s AND license_state = 'NY'
+        """, (driver_license_number,))
         
         stats = cur.fetchone()
         total_tickets = stats[0]
@@ -494,15 +591,15 @@ def run_detection(camera_id):
             existing_alert = cur.fetchone()
             
             if not existing_alert:
-                # Create new alert
+                # Create new alert with driver linkage
                 cur.execute("""
                     INSERT INTO dmv_alerts (
-                        plate_id, alert_type, status, risk_score_at_alert, crash_risk_at_alert,
+                        plate_id, driver_license_number, alert_type, status, risk_score_at_alert, crash_risk_at_alert,
                         total_violations_at_alert, reason, responsible_party, court_name
-                    ) VALUES (%s, 'ISA_REQUIRED', 'NEW', %s, %s, %s, %s, 'DMV', 'NYC Dept of Finance')
+                    ) VALUES (%s, %s, 'ISA_REQUIRED', 'NEW', %s, %s, %s, %s, 'DMV', 'NYC Dept of Finance')
                     RETURNING alert_id
                 """, (
-                    plate_id, total_points, crash_risk, total_tickets,
+                    plate_id, driver_license_number, total_points, crash_risk, total_tickets,
                     f"CV Detection: {speed_detected} MPH at {corridor}. Crash Risk: {crash_risk}%"
                 ))
                 alert_id = cur.fetchone()[0]
@@ -527,8 +624,11 @@ def run_detection(camera_id):
             "speed_limit": speed_limit,
             "violation_code": violation_code,
             "points": points,
+            "ocr_confidence": ocr_confidence,
             "driver": {
                 "plate_id": plate_id,
+                "driver_license_number": driver_license_number,
+                "driver_name": driver_full_name,
                 "total_tickets": total_tickets,
                 "total_points": total_points,
                 "crash_risk_score": crash_risk,
@@ -702,7 +802,10 @@ def get_camera_violations(camera_id):
                 ai.speed_detected,
                 ai.speed_limit,
                 ai.camera_id,
-                ai.screenshot_path
+                ai.screenshot_path,
+                ai.ocr_confidence,
+                v.driver_license_number,
+                v.driver_full_name
             FROM violations v
             JOIN ai_violations ai ON v.violation_id = ai.violation_id
             WHERE ai.camera_id = %s
@@ -721,10 +824,13 @@ def get_camera_violations(camera_id):
                 'plate_id': row[1],
                 'violation_code': row[2],
                 'date': row[3].isoformat() if row[3] else None,
-                'speed_detected': row[4],
+                'speed_detected': float(row[4]) if row[4] else 0,
                 'speed_limit': row[5],
                 'camera_id': row[6],
                 'screenshot_url': screenshot_url,
+                'ocr_confidence': float(row[8]) if row[8] else None,
+                'driver_license_number': row[9],
+                'driver_name': row[10],
             })
         
         cur.close()
@@ -751,6 +857,7 @@ def run_cv_detection(camera_id):
         'CAM-2': 'frontend-react/public/wallstreet.mp4',
         'CAM-3': 'frontend-react/public/brooklyn.mp4',
         'CAM-4': 'frontend-react/public/hudson valley albany.mp4',
+        'CAM-5': 'frontend-react/public/JFK_Airport_Speeding_Camry_Video.mp4',
     }
     
     if camera_id not in video_map:
@@ -867,7 +974,10 @@ def get_recent_violations():
                 ai.speed_detected,
                 ai.speed_limit,
                 ai.camera_id,
-                ai.screenshot_path
+                ai.screenshot_path,
+                ai.ocr_confidence,
+                v.driver_license_number,
+                v.driver_full_name
             FROM violations v
             JOIN ai_violations ai ON v.violation_id = ai.violation_id
             WHERE ai.screenshot_path IS NOT NULL
@@ -886,10 +996,13 @@ def get_recent_violations():
                 'violation_code': row[5],
                 'date': row[6].isoformat() if row[6] else None,
                 'police_agency': row[7],
-                'speed_detected': row[8],
+                'speed_detected': float(row[8]) if row[8] else 0,
                 'speed_limit': row[9],
                 'camera_id': row[10],
                 'screenshot_url': f'/snapshots/{Path(row[11]).name}' if row[11] else None,
+                'ocr_confidence': float(row[12]) if row[12] else None,
+                'driver_license_number': row[13],
+                'driver_name': row[14],
             })
         
         cur.close()

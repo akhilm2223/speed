@@ -1,10 +1,26 @@
+# Core dependencies
 requests
 psycopg[binary]
 flask
 flask-cors
 python-dotenv
 python-dateutil
-opencv-python
-ultralytics
 numpy
 geopy
+
+# Computer Vision & AI
+opencv-python
+ultralytics
+
+# Vehicle Tracking
+lap
+filterpy
+scikit-image
+scipy
+
+# License Plate OCR
+easyocr
+
+# Optional: PaddleOCR (uncomment if needed)
+# paddleocr
+# paddlepaddle

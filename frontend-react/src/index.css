@@ -3537,3 +3537,466 @@ body {
 .violations-box::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 107, 53, 0.7);
 }
+
+/* ========================================
+   GOVERNMENT / PROFESSIONAL STYLE UI
+   Clean black, white, gray with minimal accents
+   ======================================== */
+
+/* Government Style Violations Box - Refined */
+.violations-box.gov-style {
+  background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
+  border: none;
+  border-radius: 12px;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.violations-box.gov-style h3 {
+  color: #1a1a1a;
+  font-weight: 700;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 16px 20px;
+  margin: 0 0 0 0;
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+  color: #fff;
+  border-radius: 12px 12px 0 0;
+  margin: -20px -20px 15px -20px;
+}
+
+/* Scan Status - Refined */
+.scan-status-gov {
+  background: linear-gradient(135deg, #f8f9fa 0%, #f0f1f2 100%);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.scan-status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.scan-status-row span {
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.scan-status-row span.active {
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.spinner-gov {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e5e7eb;
+  border-top-color: #1a1a1a;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.vehicles-count {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin-top: 8px;
+  padding-left: 28px;
+}
+
+/* Violations Count Badge - Refined */
+.violations-count-gov {
+  background: linear-gradient(135deg, #1a1a1a 0%, #374151 100%);
+  color: #ffffff;
+  text-align: center;
+  padding: 12px 16px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.violations-count-gov .detecting-more {
+  font-size: 0.75rem;
+  margin-left: 10px;
+  opacity: 0.7;
+  font-weight: 400;
+}
+
+/* Violation Item Card - Refined */
+.violation-item-gov {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  margin-bottom: 14px;
+  overflow: hidden;
+  animation: cardSlideIn 0.4s ease-out;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.violation-item-gov:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+@keyframes cardSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.violation-item-gov .ss-img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.violation-item-gov .ss-placeholder {
+  width: 100%;
+  height: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  border-bottom: 1px solid #e5e7eb;
+  color: #9ca3af;
+}
+
+.violation-item-gov .ss-placeholder span {
+  font-size: 1.2rem;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.violation-item-gov .ss-placeholder p {
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+/* Violation Info Section */
+.ss-info-gov {
+  padding: 14px 16px;
+}
+
+.ss-header-gov {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.ss-plate-gov {
+  font-family: 'SF Mono', 'Consolas', 'Courier New', monospace;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #1a1a1a;
+  letter-spacing: 1.5px;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+}
+
+/* Severity Badges - Refined with Color */
+.ss-severity-gov {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 5px 12px;
+  border-radius: 4px;
+}
+
+.ss-severity-gov.severe {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.3);
+}
+
+.ss-severity-gov.high {
+  background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.3);
+}
+
+.ss-severity-gov.moderate {
+  background: linear-gradient(135deg, #ca8a04 0%, #a16207 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(202, 138, 4, 0.3);
+}
+
+.ss-severity-gov.standard {
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(107, 114, 128, 0.3);
+}
+
+/* Violation Code */
+.ss-code-gov {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+/* Speed Display */
+.ss-speed-gov {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+}
+
+.ss-speed-gov .speed-limit {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #9ca3af;
+  margin-left: 10px;
+}
+
+/* Metadata */
+.ss-meta-gov {
+  font-size: 0.8rem;
+  color: #6b7280;
+  padding-top: 10px;
+  border-top: 1px solid #f3f4f6;
+}
+
+/* Video Box - Refined */
+.video-box-gov {
+  position: fixed;
+  top: 30px;
+  right: 30px;
+  width: 400px;
+  background: #ffffff;
+  border: none;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.15),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 30;
+}
+
+.video-box-gov .video-feed {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.video-title-gov {
+  padding: 12px 16px 6px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #1a1a1a;
+  text-align: center;
+}
+
+.video-status-gov {
+  padding: 6px 16px 14px;
+  font-size: 0.75rem;
+  text-align: center;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.video-status-gov.active {
+  color: #dc2626;
+  animation: statusPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.close-btn-gov {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #ffffff;
+  border: none;
+  border-radius: 50%;
+  font-size: 18px;
+  cursor: pointer;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(4px);
+}
+
+.close-btn-gov:hover {
+  background: #1a1a1a;
+  transform: scale(1.1);
+}
+
+/* No Data Message */
+.violations-box.gov-style .no-data {
+  color: #9ca3af;
+  text-align: center;
+  padding: 40px 20px;
+  font-size: 0.95rem;
+}
+
+/* ========================================
+   VIOLATION TOOLTIP - REFINED PROFESSIONAL
+   ======================================== */
+
+.violation-tooltip-gov {
+  background: linear-gradient(145deg, #ffffff 0%, #fafafa 100%);
+  border: none;
+  border-radius: 8px;
+  box-shadow: 
+    0 4px 20px rgba(0, 0, 0, 0.12),
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  min-width: 240px;
+  max-width: 300px;
+  z-index: 1000;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overflow: hidden;
+  animation: tooltipFadeIn 0.2s ease-out;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+.tooltip-close-gov {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  border-radius: 50%;
+  color: #999;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.tooltip-close-gov:hover {
+  background: #1a1a1a;
+  color: #fff;
+  transform: scale(1.1);
+}
+
+.tooltip-header-gov {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+  color: #fff;
+}
+
+.tooltip-code-gov {
+  font-family: 'SF Mono', 'Consolas', 'Courier New', monospace;
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #fff;
+  letter-spacing: 1px;
+}
+
+.tooltip-severity-gov {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.tooltip-severity-gov.severe {
+  background: #dc2626;
+  color: #ffffff;
+  box-shadow: 0 2px 4px rgba(220, 38, 38, 0.3);
+}
+
+.tooltip-severity-gov.high {
+  background: #ea580c;
+  color: #ffffff;
+  box-shadow: 0 2px 4px rgba(234, 88, 12, 0.3);
+}
+
+.tooltip-severity-gov.moderate {
+  background: #ca8a04;
+  color: #ffffff;
+  box-shadow: 0 2px 4px rgba(202, 138, 4, 0.3);
+}
+
+.tooltip-severity-gov.standard {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.tooltip-body-gov {
+  padding: 12px 16px;
+}
+
+.tooltip-row-gov {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.tooltip-row-gov:last-child {
+  border-bottom: none;
+  padding-bottom: 4px;
+}
+
+.tooltip-row-gov .row-label {
+  font-size: 0.7rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.tooltip-row-gov .row-value {
+  font-size: 0.9rem;
+  color: #1a1a1a;
+  font-weight: 600;
+  text-align: right;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

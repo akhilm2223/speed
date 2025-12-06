@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS cameras (
     description  TEXT,
     video_url    TEXT,
     is_active    BOOLEAN DEFAULT true,
+    speed_limit  INTEGER DEFAULT 30,
+    meters_per_pixel FLOAT DEFAULT 0.05,
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -60,12 +62,13 @@ CREATE TABLE IF NOT EXISTS ai_violations (
     plate_id       VARCHAR(16),
     violation_type VARCHAR(32),
     points         INTEGER,
-    speed_detected INTEGER,
+    speed_detected DECIMAL(5, 1),
     speed_limit    INTEGER,
     is_school_zone BOOLEAN,
     latitude       DECIMAL(10, 8),
     longitude      DECIMAL(11, 8),
     screenshot_path TEXT,
+    ocr_confidence  DECIMAL(4, 3),
     detected_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -94,3 +97,5 @@ CREATE TABLE IF NOT EXISTS dmv_alerts (
 CREATE INDEX IF NOT EXISTS idx_violations_plate_date ON violations(plate_id, plate_state, date_of_violation DESC);
 CREATE INDEX IF NOT EXISTS idx_violations_code ON violations(violation_code);
 CREATE INDEX IF NOT EXISTS idx_dmv_alerts_plate ON dmv_alerts(plate_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_violations_camera ON ai_violations(camera_id, detected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_violations_plate ON ai_violations(plate_id);

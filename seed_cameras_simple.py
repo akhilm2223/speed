@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Simple camera seeding - just adds cameras to the existing schema.
+Simple camera seeding - adds cameras with calibration values to the existing schema.
+Includes meters_per_pixel for real speed estimation.
+
 Run: python seed_cameras_simple.py
 """
 import os
@@ -17,7 +19,8 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASSWORD", "mypassword"),
 }
 
-# Camera locations with video files in public folder
+# Camera locations with video files and calibration values
+# meters_per_pixel is calibrated per camera for accurate speed estimation
 CAMERAS = [
     {
         "camera_id": "CAM-1",
@@ -27,7 +30,9 @@ CAMERAS = [
         "borough": "Manhattan",
         "zone_type": "high_traffic",
         "description": "Times Square - highest pedestrian density zone",
-        "video_url": "/timesquare.mp4"
+        "video_url": "/timesquare.mp4",
+        "speed_limit": 15,           # 15 MPH in pedestrian zone
+        "meters_per_pixel": 0.035,   # Closer camera, smaller scale
     },
     {
         "camera_id": "CAM-2",
@@ -37,7 +42,9 @@ CAMERAS = [
         "borough": "Manhattan",
         "zone_type": "financial_district",
         "description": "Wall Street - Financial District high-speed corridor",
-        "video_url": "/wallstreet.mp4"
+        "video_url": "/wallstreet.mp4",
+        "speed_limit": 30,           # 30 MPH city street
+        "meters_per_pixel": 0.042,   # Mid-range camera
     },
     {
         "camera_id": "CAM-3",
@@ -47,7 +54,9 @@ CAMERAS = [
         "borough": "Brooklyn",
         "zone_type": "event_venue",
         "description": "Barclays Center - Atlantic Ave high traffic zone",
-        "video_url": "/brooklyn.mp4"
+        "video_url": "/brooklyn.mp4",
+        "speed_limit": 30,           # 30 MPH city street
+        "meters_per_pixel": 0.04,    # Mid-range camera
     },
     {
         "camera_id": "CAM-4",
@@ -57,67 +66,95 @@ CAMERAS = [
         "borough": "Albany",
         "zone_type": "highway",
         "description": "Hudson Valley - I-87 high-speed corridor",
-        "video_url": "/hudson valley albany.mp4"
+        "video_url": "/hudson valley albany.mp4",
+        "speed_limit": 55,           # 55 MPH highway
+        "meters_per_pixel": 0.06,    # Farther camera, larger scale
+    },
+    {
+        "camera_id": "CAM-5",
+        "name": "JFK Airport",
+        "latitude": 40.6413,
+        "longitude": -73.7781,
+        "borough": "Queens",
+        "zone_type": "airport",
+        "description": "JFK Airport - Airport access road speed enforcement",
+        "video_url": "/JFK_Airport_Speeding_Camry_Video.mp4",
+        "speed_limit": 25,           # 25 MPH airport zone
+        "meters_per_pixel": 0.045,   # Mid-range camera
     }
 ]
 
+
 def seed_cameras():
-    print("Connecting to database...")
+    print("=" * 60)
+    print("  CAMERA SEEDING WITH CALIBRATION VALUES")
+    print("=" * 60)
+    
+    print("\nConnecting to database...")
     conn = psycopg.connect(**DB_CONFIG)
     cur = conn.cursor()
     
-    # Check if cameras table exists with correct schema
+    # Check if cameras table exists and has new columns
     cur.execute("""
         SELECT column_name FROM information_schema.columns 
         WHERE table_name = 'cameras'
     """)
     columns = [row[0] for row in cur.fetchall()]
-    print(f"Cameras table columns: {columns}")
+    print(f"Current columns: {columns}")
     
-    if not columns:
-        print("Creating cameras table...")
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS cameras (
-                camera_id    VARCHAR(32) PRIMARY KEY,
-                name         VARCHAR(128) NOT NULL,
-                latitude     DECIMAL(10, 8) NOT NULL,
-                longitude    DECIMAL(11, 8) NOT NULL,
-                borough      VARCHAR(64),
-                zone_type    VARCHAR(32),
-                description  TEXT,
-                video_url    VARCHAR(512),
-                is_active    BOOLEAN DEFAULT true,
-                created_at   TIMESTAMPTZ DEFAULT NOW()
-            )
-        """)
-        conn.commit()
+    # Add new columns if they don't exist
+    if 'speed_limit' not in columns:
+        print("Adding speed_limit column...")
+        cur.execute("ALTER TABLE cameras ADD COLUMN speed_limit INTEGER DEFAULT 30")
+    
+    if 'meters_per_pixel' not in columns:
+        print("Adding meters_per_pixel column...")
+        cur.execute("ALTER TABLE cameras ADD COLUMN meters_per_pixel FLOAT DEFAULT 0.05")
+    
+    conn.commit()
     
     # Clear existing cameras
     cur.execute("DELETE FROM cameras")
-    print("Cleared existing cameras")
+    print("\nCleared existing cameras")
     
-    # Insert cameras
+    # Insert cameras with calibration values
     for cam in CAMERAS:
         cur.execute("""
-            INSERT INTO cameras (camera_id, name, latitude, longitude, borough, zone_type, description, video_url, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, true)
+            INSERT INTO cameras (
+                camera_id, name, latitude, longitude, borough, zone_type, 
+                description, video_url, is_active, speed_limit, meters_per_pixel
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, true, %s, %s)
         """, (
             cam["camera_id"], cam["name"], cam["latitude"], cam["longitude"],
-            cam["borough"], cam["zone_type"], cam["description"], cam["video_url"]
+            cam["borough"], cam["zone_type"], cam["description"], cam["video_url"],
+            cam["speed_limit"], cam["meters_per_pixel"]
         ))
-        print(f"  ✓ Added {cam['name']}")
+        print(f"  ✓ {cam['name']}: {cam['speed_limit']} MPH, {cam['meters_per_pixel']} m/px")
     
     conn.commit()
     
     # Verify
-    cur.execute("SELECT camera_id, name, video_url FROM cameras")
-    print("\nCameras in database:")
+    print("\n" + "-" * 60)
+    print("Cameras in database:")
+    print("-" * 60)
+    cur.execute("""
+        SELECT camera_id, name, speed_limit, meters_per_pixel, video_url 
+        FROM cameras ORDER BY camera_id
+    """)
     for row in cur:
-        print(f"  {row[0]}: {row[1]} -> {row[2]}")
+        print(f"  {row[0]}: {row[1]}")
+        print(f"          Speed Limit: {row[2]} MPH")
+        print(f"          Calibration: {row[3]} m/px")
+        print(f"          Video: {row[4]}")
     
     cur.close()
     conn.close()
-    print("\n✓ Done! Cameras seeded.")
+    
+    print("\n" + "=" * 60)
+    print("  ✓ Done! Cameras seeded with calibration values.")
+    print("=" * 60)
+
 
 if __name__ == "__main__":
     seed_cameras()

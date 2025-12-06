@@ -15,7 +15,29 @@ function DMVDashboard() {
   const [countyStats, setCountyStats] = useState(null);
   const [impactMetrics, setImpactMetrics] = useState(null);
   const [showLocalCourtsPanel, setShowLocalCourtsPanel] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const navigate = useNavigate();
+
+  // Enable page scrolling (override body overflow:hidden)
+  useEffect(() => {
+    document.body.style.overflow = 'auto';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
+  // Scroll to top button visibility
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 300);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   useEffect(() => {
     loadDashboard();
@@ -121,12 +143,12 @@ function DMVDashboard() {
   // ENFORCEMENT STAGE
   const getEnforcementButton = (driver) => {
     const status = driver.enforcement_status;
-    if (status === 'COMPLIANT') return { icon: '✓', label: 'Compliant', class: 'stage-compliant', disabled: true };
-    if (status === 'ESCALATED') return { icon: '⚠️', label: 'Escalated', class: 'stage-escalated', disabled: true };
-    if (status === 'FOLLOW_UP_DUE') return { icon: '📝', label: 'Follow-Up', class: 'stage-followup', disabled: false };
-    if (status === 'NOTICE_SENT') return { icon: '✉️', label: 'Sent', class: 'stage-sent', disabled: true };
-    if (driver.status === 'ISA_REQUIRED') return { icon: '🆕', label: 'New', class: 'stage-new', disabled: false };
-    return { icon: '—', label: 'Monitor', class: 'stage-monitor', disabled: true };
+    if (status === 'COMPLIANT') return { label: 'Compliant', class: 'stage-compliant', disabled: true };
+    if (status === 'ESCALATED') return { label: 'Escalated', class: 'stage-escalated', disabled: true };
+    if (status === 'FOLLOW_UP_DUE') return { label: 'Follow-Up', class: 'stage-followup', disabled: false };
+    if (status === 'NOTICE_SENT') return { label: 'Sent', class: 'stage-sent', disabled: true };
+    if (driver.status === 'ISA_REQUIRED') return { label: 'New', class: 'stage-new', disabled: false };
+    return { label: 'Monitor', class: 'stage-monitor', disabled: true };
   };
 
   // RECENCY INDICATOR - Shows actual date for historical data
@@ -173,12 +195,11 @@ function DMVDashboard() {
       <header className="dmv-header">
         <div className="header-left">
           <div className="dmv-logo">
-            <span className="logo-icon">🛡️</span>
             <span className="logo-text">NY DMV — ISA Enforcement Command</span>
           </div>
         </div>
         <div className="header-right">
-          <button className="nav-link" onClick={() => navigate('/map')}>🗺️ Camera Network</button>
+          <button className="nav-link" onClick={() => navigate('/map')}>Camera Network</button>
         </div>
       </header>
 
@@ -189,7 +210,7 @@ function DMVDashboard() {
           <span className="policy-rule">ISA: ≥{policy?.isa_points_threshold} pts OR ≥{policy?.isa_ticket_threshold} tickets</span>
         </div>
         {dashboard?.data_source && (
-          <div className="data-source-tag">📊 {dashboard.data_source.name}</div>
+          <div className="data-source-tag">{dashboard.data_source.name}</div>
         )}
       </div>
 
@@ -238,23 +259,20 @@ function DMVDashboard() {
           {countyStats && (
             <div className="county-risk-strip">
               <div className="county-card top-risk">
-                <div className="county-icon">🔴</div>
                 <div className="county-info">
-                  <div className="county-name">{countyStats.top_risk_county?.county || 'N/A'}</div>
                   <div className="county-label">Top Risk County</div>
+                  <div className="county-name">{countyStats.top_risk_county?.county || 'N/A'}</div>
                   <div className="county-stat">{countyStats.top_risk_county?.crash_risk_score}% crash risk</div>
                 </div>
               </div>
               <div className="county-card most-severe">
-                <div className="county-icon">⚡</div>
                 <div className="county-info">
-                  <div className="county-name">{countyStats.most_1180d_county?.county || 'N/A'}</div>
                   <div className="county-label">Most 1180D Violations</div>
+                  <div className="county-name">{countyStats.most_1180d_county?.county || 'N/A'}</div>
                   <div className="county-stat">{countyStats.most_1180d_county?.count?.toLocaleString()} severe</div>
                 </div>
               </div>
               <div className="county-card top-five">
-                <div className="county-icon">📊</div>
                 <div className="county-info">
                   <div className="county-label">Top 5 Counties by Risk</div>
                   <div className="county-list">
@@ -270,14 +288,13 @@ function DMVDashboard() {
           {/* LOCAL COURTS ADAPTER PANEL */}
           <div className="local-courts-panel">
             <div className="panel-header" onClick={() => setShowLocalCourtsPanel(!showLocalCourtsPanel)}>
-              <span className="panel-icon">⚖️</span>
               <span className="panel-title">Local Courts Adapter</span>
               {localCourts && (
                 <span className="panel-stats">
                   {localCourts.unique_courts?.toLocaleString()} courts • {localCourts.unique_counties?.toLocaleString()} counties
                 </span>
               )}
-              <span className="panel-toggle">{showLocalCourtsPanel ? '▼' : '▶'}</span>
+              <span className="panel-toggle">{showLocalCourtsPanel ? '−' : '+'}</span>
             </div>
             {showLocalCourtsPanel && localCourts && (
               <div className="panel-content">
@@ -316,7 +333,7 @@ function DMVDashboard() {
                   </div>
                 </div>
                 <button className="upload-btn" onClick={() => navigate('/dmv/courts-upload')}>
-                  📤 Upload Court CSV
+                  Upload Court CSV
                 </button>
               </div>
             )}
@@ -326,15 +343,15 @@ function DMVDashboard() {
           <div className="filter-bar">
             <span className="filter-label">Filters:</span>
             {[
-              { key: 'high_risk', icon: '⚠️', label: 'High Risk' },
-              { key: 'isa_required', icon: '🆕', label: 'Needs Notice' },
-              { key: 'pending_followup', icon: '📝', label: 'Follow-Up' },
-              { key: 'nighttime', icon: '🌙', label: 'Nighttime' },
-              { key: 'recent', icon: '📅', label: 'By Date' },
-              { key: 'all', icon: '📋', label: 'All' },
+              { key: 'high_risk', label: 'High Risk' },
+              { key: 'isa_required', label: 'Needs Notice' },
+              { key: 'pending_followup', label: 'Follow-Up' },
+              { key: 'nighttime', label: 'Nighttime' },
+              { key: 'recent', label: 'By Date' },
+              { key: 'all', label: 'All' },
             ].map(f => (
               <button key={f.key} className={`filter-btn ${activeFilter === f.key ? 'active' : ''}`} onClick={() => setActiveFilter(f.key)}>
-                {f.icon} {f.label}
+                {f.label}
               </button>
             ))}
             <span className="filter-count">{filteredQueue.length} drivers</span>
@@ -342,7 +359,7 @@ function DMVDashboard() {
             {/* BATCH ACTIONS */}
             {canBatchSend && (
               <button className="batch-btn" onClick={handleBatchSend} disabled={actionLoading === 'batch'}>
-                📨 Send {selectedDrivers.size} Notices
+                Send {selectedDrivers.size} Notices
               </button>
             )}
           </div>
@@ -379,7 +396,6 @@ function DMVDashboard() {
                   {filteredQueue.length === 0 && (
                     <tr><td colSpan="10" className="empty-queue">
                       <div className="empty-state">
-                        <span className="empty-icon">📋</span>
                         <p className="empty-title">No drivers match this filter</p>
                       </div>
                     </td></tr>
@@ -432,10 +448,10 @@ function DMVDashboard() {
                         </td>
                         <td>
                           <div className="risk-factors">
-                            {driver.severe_count > 0 && <span className="factor-tag severe">⚡ {driver.severe_count} severe</span>}
-                            {driver.is_night_heavy && <span className="factor-tag night">🌙 {driver.night_percentage}% night</span>}
-                            {driver.is_cross_borough && <span className="factor-tag geo">📍 {driver.borough_count} areas</span>}
-                            {driver.violation_count >= 5 && <span className="factor-tag repeat">🔁 {driver.violation_count} tickets</span>}
+                            {driver.severe_count > 0 && <span className="factor-tag severe">{driver.severe_count} severe</span>}
+                            {driver.is_night_heavy && <span className="factor-tag night">{driver.night_percentage}% night</span>}
+                            {driver.is_cross_borough && <span className="factor-tag geo">{driver.borough_count} areas</span>}
+                            {driver.violation_count >= 5 && <span className="factor-tag repeat">{driver.violation_count} tickets</span>}
                           </div>
                         </td>
                         <td>
@@ -452,18 +468,18 @@ function DMVDashboard() {
                           </span>
                         </td>
                         <td>
-                          <span className={`stage-badge ${stageBtn.class}`}>{stageBtn.icon} {stageBtn.label}</span>
+                          <span className={`stage-badge ${stageBtn.class}`}>{stageBtn.label}</span>
                         </td>
                         <td>
                           {canSelect && (
                             <button className="action-btn-send" onClick={() => handleSendNotice(driver.plate_id)} disabled={actionLoading === driver.plate_id}>
-                              {actionLoading === driver.plate_id ? '...' : '📨'}
+                              {actionLoading === driver.plate_id ? '...' : 'Send'}
                             </button>
                           )}
                           {driver.enforcement_status === 'FOLLOW_UP_DUE' && (
                             <button className="action-btn-review" onClick={() => navigate(`/dmv/drivers/${driver.plate_id}`)}>Review</button>
                           )}
-                          {stageBtn.disabled && stageBtn.label !== 'Monitor' && <span className="action-done">{stageBtn.icon}</span>}
+                          {stageBtn.disabled && stageBtn.label !== 'Monitor' && <span className="action-done">✓</span>}
                         </td>
                       </tr>
                     );
@@ -490,6 +506,13 @@ function DMVDashboard() {
           </div>
         </aside>
       </div>
+
+      {/* Scroll to Top Button */}
+      {showScrollTop && (
+        <button className="scroll-top-btn" onClick={scrollToTop} title="Scroll to top">
+          ↑
+        </button>
+      )}
     </div>
   );
 }

@@ -9,9 +9,9 @@ import CameraModal from '../components/CameraModal';
 import '../index.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5001';
-// NY State center (shows entire state)
-const NY_STATE_CENTER = [42.5, -75.5];
-const DEFAULT_ZOOM = 7;
+// NYC center (focused on the 5 boroughs)
+const NYC_CENTER = [40.7128, -74.0060];
+const DEFAULT_ZOOM = 11;
 
 // High-performance Canvas-based layer for 100k+ points
 function ViolationLayer({ points, onPointClick, onPointsDrawn }) {
@@ -282,8 +282,16 @@ function MapView() {
 
   const loadData = async () => {
     try {
+      // Build URL with region filter
+      let heatmapUrl = `${API_BASE}/api/heatmap?limit=50000`;
+      if (mapMode === 'nyc') {
+        heatmapUrl += '&region=nyc';
+      } else if (mapMode === 'suffolk') {
+        heatmapUrl += '&region=suffolk';
+      }
+      
       const [heatmapRes, camerasRes] = await Promise.all([
-        fetch(`${API_BASE}/api/heatmap?limit=1000000`),
+        fetch(heatmapUrl),
         fetch(`${API_BASE}/api/cameras`)
       ]);
 
@@ -368,19 +376,28 @@ function MapView() {
           <div className="map-mode-toggle">
             <button 
               className={`mode-btn ${mapMode === 'statewide' ? 'active' : ''}`}
-              onClick={() => setMapMode('statewide')}
+              onClick={() => {
+                setMapMode('statewide');
+                if (mapInstance) mapInstance.setView([42.5, -75.5], 7);
+              }}
             >
               🗽 Statewide
             </button>
             <button 
               className={`mode-btn ${mapMode === 'nyc' ? 'active' : ''}`}
-              onClick={() => setMapMode('nyc')}
+              onClick={() => {
+                setMapMode('nyc');
+                if (mapInstance) mapInstance.setView([40.7128, -74.0060], 11);
+              }}
             >
               🏙️ NYC Only
             </button>
             <button 
               className={`mode-btn ${mapMode === 'suffolk' ? 'active' : ''}`}
-              onClick={() => setMapMode('suffolk')}
+              onClick={() => {
+                setMapMode('suffolk');
+                if (mapInstance) mapInstance.setView([40.88, -72.7], 10);
+              }}
             >
               📍 Suffolk
             </button>
@@ -403,7 +420,7 @@ function MapView() {
           </div>
         ) : (
           <MapContainer
-            center={NY_STATE_CENTER}
+            center={NYC_CENTER}
             zoom={DEFAULT_ZOOM}
             style={{ height: '100%', width: '100%' }}
             zoomControl={true}
@@ -497,10 +514,10 @@ function MapView() {
         />
       )}
 
-      {/* Violation Info Tooltip */}
+      {/* Violation Info Tooltip - Government Style */}
       {selectedViolation && violationPopupPos && (
         <div 
-          className="violation-tooltip"
+          className="violation-tooltip-gov"
           style={{
             position: 'absolute',
             left: `${violationPopupPos.x + 15}px`,
@@ -508,39 +525,45 @@ function MapView() {
             transform: 'translateY(-50%)'
           }}
         >
-          <button className="violation-tooltip-close" onClick={() => {
+          <button className="tooltip-close-gov" onClick={() => {
             setSelectedViolation(null);
             setViolationPopupPos(null);
           }}>×</button>
-          <div className="violation-tooltip-content">
-            <div className="violation-tooltip-header">
-              <span className="violation-code">{selectedViolation.code || 'N/A'}</span>
-              <span className="violation-severity">
-                {selectedViolation.severity >= 0.85 ? '🔴 Severe' :
-                 selectedViolation.severity >= 0.65 ? '🟠 High' :
-                 selectedViolation.severity >= 0.4 ? '🟡 Moderate' : '🔵 Standard'}
-              </span>
+          <div className="tooltip-header-gov">
+            <span className="tooltip-code-gov">{selectedViolation.code || '1180A'}</span>
+            <span className={`tooltip-severity-gov ${
+              selectedViolation.severity >= 0.85 ? 'severe' :
+              selectedViolation.severity >= 0.65 ? 'high' :
+              selectedViolation.severity >= 0.4 ? 'moderate' : 'standard'
+            }`}>
+              {selectedViolation.severity >= 0.85 ? 'SEVERE' :
+               selectedViolation.severity >= 0.65 ? 'HIGH' :
+               selectedViolation.severity >= 0.4 ? 'MODERATE' : 'STANDARD'}
+            </span>
+          </div>
+          <div className="tooltip-body-gov">
+            <div className="tooltip-row-gov">
+              <span className="row-label">Violation</span>
+              <span className="row-value">{selectedViolation.code || '1180A'}</span>
             </div>
-            <div className="violation-tooltip-body">
-              <div className="violation-tooltip-line">
-                <strong>{selectedViolation.description || 'Speeding violation'}</strong>
+            {selectedViolation.plate && (
+              <div className="tooltip-row-gov">
+                <span className="row-label">Plate</span>
+                <span className="row-value">{selectedViolation.plate} ({selectedViolation.state || 'NY'})</span>
               </div>
-              {selectedViolation.plate && (
-                <div className="violation-tooltip-line">
-                  🚗 Plate: {selectedViolation.plate} ({selectedViolation.state || 'NY'})
-                </div>
-              )}
-              {selectedViolation.date && (
-                <div className="violation-tooltip-line">
-                  📅 {new Date(selectedViolation.date).toLocaleDateString()} {new Date(selectedViolation.date).toLocaleTimeString()}
-                </div>
-              )}
-              {selectedViolation.police_agency && (
-                <div className="violation-tooltip-line">
-                  👮 {selectedViolation.police_agency}
-                </div>
-              )}
-            </div>
+            )}
+            {selectedViolation.date && (
+              <div className="tooltip-row-gov">
+                <span className="row-label">Date</span>
+                <span className="row-value">{new Date(selectedViolation.date).toLocaleDateString()} {new Date(selectedViolation.date).toLocaleTimeString()}</span>
+              </div>
+            )}
+            {selectedViolation.police_agency && (
+              <div className="tooltip-row-gov">
+                <span className="row-label">Agency</span>
+                <span className="row-value">{selectedViolation.police_agency}</span>
+              </div>
+            )}
           </div>
         </div>
       )}
