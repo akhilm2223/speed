@@ -32,7 +32,8 @@ import csv
 import os
 import random
 import string
-from datetime import datetime
+from datetime import datetime, timedelta, date
+from pathlib import Path
 
 import psycopg
 import requests
@@ -54,7 +55,7 @@ COORDINATES_FILE = "new_york_state_coordinates.csv"
 
 # Default target number of violations to fetch
 DEFAULT_TARGET_VIOLATIONS = 500_000  # Increased for statewide coverage
-BATCH_SIZE = 50_000  # API batch size (max per request)
+BATCH_SIZE = 10_000  # Reduced batch size for reliability (API can be slow)
 
 # SODA API App Token (optional but RECOMMENDED for large datasets - higher rate limits)
 # Get your FREE token at: https://data.ny.gov/profile/edit/developer_settings
@@ -112,6 +113,29 @@ def generate_plate():
         lambda: f"{''.join(random.choices(string.ascii_uppercase, k=2))}-{''.join(random.choices(string.digits, k=4))}",  # AB-1234
     ]
     return random.choice(formats)()
+
+
+def generate_driver_license_number():
+    """Generate a random NY driver license number (format: 9 digits)."""
+    return ''.join(random.choices(string.digits, k=9))
+
+
+def generate_driver_name():
+    """Generate a random driver name."""
+    first_names = ["JOHN", "JANE", "MICHAEL", "SARAH", "DAVID", "EMILY", "ROBERT", "JESSICA",
+                   "WILLIAM", "ASHLEY", "RICHARD", "AMANDA", "JOSEPH", "MELISSA", "THOMAS", "NICOLE",
+                   "CHRISTOPHER", "MICHELLE", "CHARLES", "KIMBERLY", "DANIEL", "AMY", "MATTHEW", "ANGELA"]
+    last_names = ["SMITH", "JOHNSON", "WILLIAMS", "BROWN", "JONES", "GARCIA", "MILLER", "DAVIS",
+                  "RODRIGUEZ", "MARTINEZ", "HERNANDEZ", "LOPEZ", "WILSON", "ANDERSON", "THOMAS", "TAYLOR"]
+    return f"{random.choice(first_names)} {random.choice(last_names)}"
+
+
+def generate_date_of_birth(age):
+    """Generate a date of birth based on age at violation."""
+    birth_year = datetime.now().year - age
+    month = random.randint(1, 12)
+    day = random.randint(1, 28)
+    return date(birth_year, month, day)
 
 
 def load_coordinates():
@@ -220,6 +244,18 @@ def fetch_violations_from_api(target_violations, app_token=None):
     if app_token:
         headers["X-App-Token"] = app_token
     
+    # Test connectivity with a small request first
+    print("  Testing API connectivity...", end=" ", flush=True)
+    try:
+        test_params = {"$select": "violation_charged_code", "$limit": 1}
+        test_response = requests.get(NY_STATE_API_URL, params=test_params, headers=headers, timeout=30)
+        test_response.raise_for_status()
+        print("OK")
+    except Exception as e:
+        print(f"\n  ERROR: Cannot connect to NY State API: {e}")
+        print("  Check your internet connection and try again.")
+        return []
+    
     while len(all_data) < target_violations:
         # Build query - filter for speeding violations (1180*)
         # Select ALL available fields from the dataset
@@ -239,12 +275,34 @@ def fetch_violations_from_api(target_violations, app_token=None):
         batch_num = (offset // BATCH_SIZE) + 1
         print(f"  Batch {batch_num}...", end=" ", flush=True)
         
-        try:
-            response = requests.get(NY_STATE_API_URL, params=params, headers=headers, timeout=120)
-            response.raise_for_status()
-            rows = response.json()
-        except Exception as e:
-            print(f"Error: {e}")
+        # Retry logic for network errors
+        max_retries = 3
+        retry_count = 0
+        rows = None
+        
+        while retry_count < max_retries:
+            try:
+                response = requests.get(NY_STATE_API_URL, params=params, headers=headers, timeout=120)
+                response.raise_for_status()
+                rows = response.json()
+                break  # Success, exit retry loop
+            except requests.exceptions.RequestException as e:
+                retry_count += 1
+                if retry_count < max_retries:
+                    wait_time = 2 ** retry_count  # Exponential backoff: 2s, 4s, 8s
+                    print(f"\n    Connection error (attempt {retry_count}/{max_retries}), retrying in {wait_time}s...", end=" ", flush=True)
+                    import time
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"\n    Error after {max_retries} attempts: {e}")
+                    print("    Continuing with data fetched so far...")
+                    break
+            except Exception as e:
+                print(f"\n    Error: {e}")
+                break
+        
+        if rows is None:
             break
         
         if not rows:
@@ -339,16 +397,16 @@ def process_violations(raw_data, coordinates):
         police_agency_stats[police_agency] = police_agency_stats.get(police_agency, 0) + 1
         court_stats[court] = court_stats.get(court, 0) + 1
         
-        # Parse year/month for issue_date
+        # Parse year/month for date_of_violation
         try:
             year = int(row.get("violation_year", 2024))
             month = int(row.get("violation_month", 1))
-            day = random.randint(1, 28)  # Random day since not in API
+            day = random.randint(1, 28)
             hour = random.randint(0, 23)
             minute = random.randint(0, 59)
-            issue_date = datetime(year, month, day, hour, minute)
+            date_of_violation = datetime(year, month, day, hour, minute)
         except (ValueError, TypeError):
-            issue_date = datetime(2024, 1, 1)
+            date_of_violation = datetime(2024, 1, 1)
         
         # Parse age
         try:
@@ -356,24 +414,32 @@ def process_violations(raw_data, coordinates):
         except (ValueError, TypeError):
             age = random.randint(18, 65)
         
+        # Generate driver information
+        driver_license_number = generate_driver_license_number()
+        driver_full_name = generate_driver_name()
+        date_of_birth = generate_date_of_birth(age)
+        
+        # Generate date of conviction (30-90 days after violation)
+        conviction_days = random.randint(30, 90)
+        date_of_conviction = date_of_violation + timedelta(days=conviction_days)
+        
+        # Generate disposition (match ingest.py)
+        disposition_options = ["GUILTY", "NOT GUILTY", "DISMISSED"]
+        disposition = random.choice(disposition_options)
+        
         violation = {
+            "driver_license_number": driver_license_number,
+            "driver_full_name": driver_full_name,
+            "date_of_birth": date_of_birth,
+            "license_state": state_of_license,
             "plate_id": plate,
-            "registration_state": state_of_license,
+            "plate_state": state_of_license,
             "violation_code": violation_code,
-            "violation_description": row.get("violation_description") or get_violation_description(violation_code),
-            "violation_year": int(row.get("violation_year", 2024)),
-            "violation_month": int(row.get("violation_month", 1)),
-            "violation_dow": row.get("violation_dow", "MONDAY"),
-            "age_at_violation": age,
-            "gender": row.get("gender", "U"),
-            "state_of_license": state_of_license,
-            "police_agency": police_agency,
-            "county": county,  # Derived from court name
-            "court": court,    # CRITICAL for local court adapter
-            "source": row.get("source", "TSLED"),
+            "date_of_violation": date_of_violation,
+            "date_of_conviction": date_of_conviction,
+            "disposition": disposition,
             "latitude": lat,
             "longitude": lon,
-            "issue_date": issue_date,
         }
         violations.append(violation)
         
@@ -432,77 +498,27 @@ def save_to_database(violations):
     tables_exist = cur.fetchone()[0]
     
     if not tables_exist:
-        print("  Tables don't exist - creating them...")
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS vehicles (
-                plate_id VARCHAR(16) NOT NULL,
-                registration_state VARCHAR(10) NOT NULL,
-                PRIMARY KEY (plate_id, registration_state)
-            )
-        """)
-        
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS violations (
-                violation_id BIGSERIAL PRIMARY KEY,
-                plate_id VARCHAR(16) NOT NULL,
-                registration_state VARCHAR(10) NOT NULL,
-                source_type VARCHAR(32) DEFAULT 'police_stop',
-                violation_code VARCHAR(64) NOT NULL,
-                violation_description VARCHAR(255),
-                violation_year INTEGER,
-                violation_month INTEGER,
-                violation_dow VARCHAR(16),
-                age_at_violation INTEGER,
-                gender VARCHAR(1),
-                state_of_license VARCHAR(64),
-                police_agency VARCHAR(128),
-                county VARCHAR(64),
-                court VARCHAR(128),
-                disposition VARCHAR(64),
-                source VARCHAR(16),
-                latitude DECIMAL(10, 8),
-                longitude DECIMAL(11, 8),
-                issue_date TIMESTAMPTZ,
-                violation_location VARCHAR(255),
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                FOREIGN KEY (plate_id, registration_state) 
-                    REFERENCES vehicles (plate_id, registration_state) ON DELETE CASCADE
-            )
-        """)
-        conn.commit()
-        print("  Tables created.")
+        print("  Tables don't exist - creating them from schema...")
+        # Read and execute schema file
+        schema_path = Path(__file__).parent / "sql" / "schema.sql"
+        if schema_path.exists():
+            with open(schema_path, 'r') as f:
+                schema_sql = f.read()
+            cur.execute(schema_sql)
+            conn.commit()
+            print("  Tables created from schema.")
+        else:
+            print("  ERROR: schema.sql not found!")
+            return
     else:
         # Get current counts
         cur.execute("SELECT COUNT(*) FROM violations")
         existing_count = cur.fetchone()[0]
         print(f"  Tables exist - appending to {existing_count:,} existing violations")
-        
-        # Add missing columns if they don't exist (for statewide fields)
-        columns_to_add = [
-            ("violation_year", "INTEGER"),
-            ("violation_month", "INTEGER"),
-            ("violation_dow", "VARCHAR(16)"),
-            ("age_at_violation", "INTEGER"),
-            ("gender", "VARCHAR(1)"),
-            ("state_of_license", "VARCHAR(64)"),
-            ("police_agency", "VARCHAR(128)"),
-            ("county", "VARCHAR(64)"),  # CRITICAL for county risk cards
-            ("court", "VARCHAR(128)"),  # CRITICAL for local court adapter
-            ("disposition", "VARCHAR(64)"),  # CRITICAL for compliance tracking
-            ("source", "VARCHAR(16)"),
-            ("latitude", "DECIMAL(10, 8)"),
-            ("longitude", "DECIMAL(11, 8)"),
-        ]
-        for col_name, col_type in columns_to_add:
-            try:
-                cur.execute(f"ALTER TABLE violations ADD COLUMN IF NOT EXISTS {col_name} {col_type}")
-            except Exception:
-                pass  # Column might already exist
-        conn.commit()
     
     # Insert vehicles (with ON CONFLICT to handle duplicates)
     print("  Inserting vehicles...")
-    vehicles = set((v["plate_id"], v["registration_state"]) for v in violations)
+    vehicles = set((v["plate_id"], v["plate_state"]) for v in violations)
     vehicle_list = list(vehicles)
     
     for i in range(0, len(vehicle_list), 5000):
@@ -514,51 +530,70 @@ def save_to_database(violations):
     conn.commit()
     print(f"    Inserted {len(vehicles):,} vehicles (duplicates skipped)")
     
-    # Insert violations with ALL statewide fields
+    # Insert violations with new schema fields
     print("  Inserting violations...")
     inserted = 0
     for i in range(0, len(violations), 5000):
         batch = violations[i:i + 5000]
         for v in batch:
-            location = f"{v.get('county', 'Unknown')}, ({v['latitude']}, {v['longitude']})"
             cur.execute("""
                 INSERT INTO violations (
-                    plate_id, registration_state, source_type, violation_code, 
-                    violation_description, violation_year, violation_month, violation_dow,
-                    age_at_violation, gender, state_of_license, police_agency, county,
-                    court, disposition, source, latitude, longitude, issue_date, violation_location
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    driver_license_number, driver_full_name, date_of_birth, license_state,
+                    plate_id, plate_state, violation_code, date_of_violation,
+                    date_of_conviction, disposition, latitude, longitude
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
-                v["plate_id"], v["registration_state"], "ny_state_statewide", v["violation_code"],
-                v["violation_description"], v["violation_year"], v["violation_month"], v["violation_dow"],
-                v["age_at_violation"], v["gender"], v["state_of_license"], v["police_agency"], 
-                v.get("county", "Unknown"), v["court"], None,  # disposition not available in this dataset
-                v["source"], v["latitude"], v["longitude"], v["issue_date"], location
+                v["driver_license_number"], v["driver_full_name"], v["date_of_birth"], v["license_state"],
+                v["plate_id"], v["plate_state"], v["violation_code"], v["date_of_violation"],
+                v["date_of_conviction"], v["disposition"], v["latitude"], v["longitude"]
             ))
         conn.commit()
         inserted += len(batch)
         print(f"    Progress: {inserted:,}/{len(violations):,}")
     
-    # Create indexes (IF NOT EXISTS to avoid errors)
-    print("  Creating indexes...")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_violations_plate ON violations(plate_id, registration_state)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_violations_code ON violations(violation_code)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_violations_date ON violations(issue_date)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_violations_location ON violations(latitude, longitude)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_violations_county ON violations(county)")  # NEW: County index
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_violations_court ON violations(court)")    # NEW: Court index
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_violations_disposition ON violations(disposition)")  # NEW: Disposition index
-    conn.commit()
-    
     # Final count
     cur.execute("SELECT COUNT(*) FROM violations")
     total_count = cur.fetchone()[0]
+    
+    # Populate driver_license_summary table
+    print("  Updating driver_license_summary...")
+    cur.execute("""
+        INSERT INTO driver_license_summary (driver_license_number, license_state, total_speeding_tickets, points_on_license)
+        SELECT 
+            driver_license_number,
+            license_state,
+            COUNT(*),
+            SUM(CASE 
+                WHEN disposition = 'GUILTY' THEN
+                    CASE 
+                        WHEN violation_code = '1180A' THEN 3
+                        WHEN violation_code = '1180B' THEN 4
+                        WHEN violation_code = '1180C' THEN 6
+                        WHEN violation_code = '1180D' THEN 8
+                        WHEN violation_code IN ('1180E', '1180F') THEN 7
+                        ELSE 0
+                    END
+                ELSE 0
+            END)
+        FROM violations
+        WHERE violation_code LIKE '1180%'
+        GROUP BY driver_license_number, license_state
+        ON CONFLICT (driver_license_number, license_state) DO UPDATE SET
+            total_speeding_tickets = EXCLUDED.total_speeding_tickets,
+            points_on_license = EXCLUDED.points_on_license,
+            updated_at = NOW()
+    """)
+    conn.commit()
+    
+    cur.execute("SELECT COUNT(*) FROM driver_license_summary")
+    summary_count = cur.fetchone()[0]
     
     cur.close()
     conn.close()
     
     print(f"  Inserted {inserted:,} NY State violations")
     print(f"  Total violations in database: {total_count:,}")
+    print(f"  Updated {summary_count:,} driver license summaries")
 
 
 # =============================================================================

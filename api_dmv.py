@@ -74,7 +74,7 @@ def get_time_window_filter(policy: dict = ISA_POLICY):
         return "", []
     
     cutoff_date = datetime.now() - relativedelta(months=policy["time_window_months"])
-    return "AND v.issue_date >= %s", [cutoff_date]
+    return "AND v.date_of_violation >= %s", [cutoff_date]
 
 
 def compute_driver_risk(conn, plate_id: str, registration_state: str = "NY", policy: dict = ISA_POLICY) -> dict:
@@ -122,20 +122,20 @@ def compute_driver_risk(conn, plate_id: str, registration_state: str = "NY", pol
             COUNT(*) AS total_tickets,
             COALESCE(SUM({points_case_sql}), 0) AS total_points,
             COUNT(*) FILTER (WHERE v.violation_code IN ({severe_codes_sql})) AS severe_count,
-            MAX(v.issue_date) AS latest_violation_ts,
-            MIN(v.issue_date) AS first_violation_ts,
-            COALESCE(SPLIT_PART(MAX(v.violation_location), ',', 1), 'Unknown') AS primary_borough,
-            COUNT(DISTINCT SPLIT_PART(v.violation_location, ',', 1)) AS borough_count,
+            MAX(v.date_of_violation) AS latest_violation_ts,
+            MIN(v.date_of_violation) AS first_violation_ts,
+            'NYC' AS primary_borough,
+            1 AS borough_count,
             COUNT(*) FILTER (
-                WHERE EXTRACT(HOUR FROM v.issue_date) >= 22 
-                   OR EXTRACT(HOUR FROM v.issue_date) < 4
+                WHERE EXTRACT(HOUR FROM v.date_of_violation) >= 22 
+                   OR EXTRACT(HOUR FROM v.date_of_violation) < 4
             ) AS night_violations,
             COUNT(*) FILTER (WHERE v.violation_code = '1180D') AS high_tier_count,
             COUNT(*) FILTER (WHERE v.violation_code = '1180A') AS low_tier_count,
-            MAX(v.court) AS primary_court
+            'NYC Dept of Finance' AS primary_court
         FROM violations v
         WHERE v.plate_id = %s 
-          AND v.registration_state = %s
+          AND v.plate_state = %s
           {time_clause}
     """
     
@@ -225,28 +225,28 @@ def ensure_view_exists(policy: dict = ISA_POLICY):
     time_clause = ""
     if policy["time_window_months"] is not None:
         cutoff_date = datetime.now() - relativedelta(months=policy["time_window_months"])
-        time_clause = f"AND v.issue_date >= '{cutoff_date.strftime('%Y-%m-%d')}'"
+        time_clause = f"AND v.date_of_violation >= '{cutoff_date.strftime('%Y-%m-%d')}'"
     
     cur.execute("DROP VIEW IF EXISTS dmv_risk_view CASCADE")
     cur.execute(f"""
         CREATE VIEW dmv_risk_view AS
         SELECT 
             v.plate_id,
-            v.registration_state,
+            v.plate_state as registration_state,
             COUNT(*) AS violation_count,
             SUM({points_case_sql}) AS risk_points,
-            MAX(issue_date) AS last_violation,
-            MIN(issue_date) AS first_violation,
+            MAX(date_of_violation) AS last_violation,
+            MIN(date_of_violation) AS first_violation,
             COUNT(*) FILTER (WHERE violation_code IN ({severe_codes_sql})) AS severe_count,
             COUNT(*) FILTER (WHERE violation_code = '1180D') AS high_tier_count,
             COUNT(*) FILTER (WHERE violation_code = '1180A') AS low_tier_count,
             COUNT(*) FILTER (
-                WHERE EXTRACT(HOUR FROM issue_date) >= 22 
-                   OR EXTRACT(HOUR FROM issue_date) < 4
+                WHERE EXTRACT(HOUR FROM date_of_violation) >= 22 
+                   OR EXTRACT(HOUR FROM date_of_violation) < 4
             ) AS night_violations,
-            COALESCE(SPLIT_PART(MAX(v.violation_location), ',', 1), 'Unknown') AS primary_borough,
-            COUNT(DISTINCT SPLIT_PART(v.violation_location, ',', 1)) AS borough_count,
-            MAX(v.court) AS primary_court
+            'NYC' AS primary_borough,
+            1 AS borough_count,
+            'NYC Dept of Finance' AS primary_court
         FROM violations v
         WHERE 
             v.plate_id NOT LIKE 'UNK%%'
@@ -254,7 +254,7 @@ def ensure_view_exists(policy: dict = ISA_POLICY):
             AND LENGTH(v.plate_id) >= 4
             {time_clause}
         GROUP BY 
-            v.plate_id, v.registration_state
+            v.plate_id, v.plate_state
         HAVING 
             COUNT(*) >= 1
     """)
@@ -310,12 +310,10 @@ def get_dashboard():
                 COUNT(*) FILTER (
                     WHERE violation_count >= 3
                 ) AS super_speeders,
-                COUNT(*) FILTER (
-                    WHERE borough_count >= 2 AND risk_points >= %s
-                ) AS cross_borough
+                0 AS cross_borough
             FROM dmv_risk_view
             """,
-            (pts_threshold, tkt_threshold, mon_threshold, pts_threshold, tkt_threshold, mon_threshold),
+            (pts_threshold, tkt_threshold, mon_threshold, pts_threshold, tkt_threshold),
         )
         kpi_row = cur.fetchone()
         kpi_isa_required = kpi_row[0] or 0
@@ -323,49 +321,23 @@ def get_dashboard():
         kpi_super_speeders = kpi_row[2] or 0
         kpi_cross_borough = kpi_row[3] or 0
         
-        # County stats for new KPI cards
-        cur.execute("""
-            SELECT county, COUNT(*) as cnt
-            FROM violations
-            WHERE county IS NOT NULL AND county != 'Unknown'
-            GROUP BY county
-            ORDER BY cnt DESC
-            LIMIT 5
-        """)
-        top_risk_counties = [{"county": r[0], "count": r[1]} for r in cur]
-        
-        cur.execute("""
-            SELECT county, COUNT(*) as cnt
-            FROM violations
-            WHERE violation_code = '1180D' AND county IS NOT NULL AND county != 'Unknown'
-            GROUP BY county
-            ORDER BY cnt DESC
-            LIMIT 1
-        """)
-        most_1180d_row = cur.fetchone()
-        most_1180d_county = {"county": most_1180d_row[0], "count": most_1180d_row[1]} if most_1180d_row else None
-        
-        # Cross-jurisdiction count
-        cur.execute("""
-            SELECT COUNT(DISTINCT plate_id)
-            FROM (
-                SELECT plate_id
-                FROM violations
-                WHERE county IS NOT NULL
-                GROUP BY plate_id
-                HAVING COUNT(DISTINCT county) >= 2
-            ) sub
-        """)
-        cross_jurisdiction_count = cur.fetchone()[0]
+        # County stats for new KPI cards (Placeholder as county not available)
+        top_risk_counties = []
+        most_1180d_county = None
+        cross_jurisdiction_count = 0
 
         # Enforcement queue: top 5000 drivers by risk
+        # Get driver license number from violations table (most recent)
         cur.execute("""
             SELECT 
-                plate_id, registration_state, violation_count, risk_points,
-                last_violation, severe_count, high_tier_count, low_tier_count,
-                night_violations, primary_borough, borough_count, primary_court
-            FROM dmv_risk_view
-            ORDER BY risk_points DESC
+                rv.plate_id, rv.registration_state, rv.violation_count, rv.risk_points,
+                rv.last_violation, rv.severe_count, rv.high_tier_count, rv.low_tier_count,
+                rv.night_violations, rv.primary_borough, rv.borough_count, rv.primary_court,
+                (SELECT driver_license_number FROM violations 
+                 WHERE plate_id = rv.plate_id AND plate_state = rv.registration_state 
+                 ORDER BY date_of_violation DESC LIMIT 1) as driver_license_number
+            FROM dmv_risk_view rv
+            ORDER BY rv.risk_points DESC
             LIMIT 5000
         """)
         
@@ -383,6 +355,7 @@ def get_dashboard():
             primary_borough = row[9]
             borough_count = row[10]
             primary_court = row[11]
+            driver_license_number = row[12]
             
             status = compute_status(risk_points, violation_count, policy)
             trigger_reason = get_trigger_reason(risk_points, violation_count, policy)
@@ -404,10 +377,12 @@ def get_dashboard():
             
             all_drivers.append({
                 "plate_id": plate_id,
+                "driver_license_number": driver_license_number,
                 "state": state,
                 "violation_count": violation_count,
                 "risk_score": risk_points,
                 "risk_points": risk_points,
+                "total_points": risk_points,  # Alias for clarity
                 "crash_risk_score": crash_risk,
                 "crash_risk_level": crash_risk_level,
                 "last_violation": last_violation.isoformat() if last_violation else None,
@@ -452,19 +427,11 @@ def get_dashboard():
                     driver['status'] = 'COMPLIANT'
         
         # Latest violation
-        cur.execute("SELECT MAX(issue_date) FROM violations")
+        cur.execute("SELECT MAX(date_of_violation) FROM violations")
         latest = cur.fetchone()[0]
         
-        # Highest risk corridor
-        cur.execute("""
-            SELECT SPLIT_PART(violation_location, ',', 1) as borough, COUNT(*) as cnt
-            FROM violations
-            WHERE violation_location IS NOT NULL AND registration_state = 'NY'
-            GROUP BY borough ORDER BY cnt DESC LIMIT 1
-        """)
-        row = cur.fetchone()
-        highest_corridor = row[0] if row else "N/A"
-        corridor_count = row[1] if row else 0
+        highest_corridor = "NYC"
+        corridor_count = 0
         
         # Enforcement queue (risk >= monitoring threshold), sorted by crash risk
         queue = [d for d in all_drivers if d['risk_points'] >= mon_threshold]
@@ -517,9 +484,9 @@ def get_driver(plate_id):
         
         # First, find the registration state for this plate
         cur.execute("""
-            SELECT registration_state FROM violations 
+            SELECT plate_state FROM violations 
             WHERE plate_id = %s 
-            GROUP BY registration_state 
+            GROUP BY plate_state 
             ORDER BY COUNT(*) DESC LIMIT 1
         """, (plate_id,))
         state_row = cur.fetchone()
@@ -574,30 +541,21 @@ def get_driver(plate_id):
         
         cur.execute(f"""
             SELECT 
-                violation_id, violation_code, violation_description, issue_date, violation_location,
-                EXTRACT(HOUR FROM issue_date) as hour
+                violation_id, violation_code, violation_code as violation_description, date_of_violation,
+                EXTRACT(HOUR FROM date_of_violation) as hour
             FROM violations
-            WHERE plate_id = %s AND registration_state = %s
+            WHERE plate_id = %s AND plate_state = %s
             {time_clause}
-            ORDER BY issue_date DESC
+            ORDER BY date_of_violation DESC
         """, [plate_id, registration_state] + time_params)
         
         violations = []
-        boroughs_seen = set()
+        boroughs_seen = set(['NYC'])
         for row in cur:
-            location = row[4] or ""
-            borough = location.split(",")[0] if location else "Unknown"
-            boroughs_seen.add(borough)
+            location = "NYC"
+            borough = "NYC"
             
-            lat, lng = None, None
-            if "(" in location and ")" in location:
-                try:
-                    coords = location.split("(")[1].split(")")[0]
-                    lat, lng = [float(x.strip()) for x in coords.split(",")]
-                except:
-                    pass
-            
-            hour = int(row[5]) if row[5] else 0
+            hour = int(row[4]) if row[4] else 0
             is_night = hour >= 22 or hour < 4
             code = row[1]
             is_high_tier = code == '1180D'
@@ -606,12 +564,12 @@ def get_driver(plate_id):
             violations.append({
                 "id": row[0],
                 "code": code,
-                "description": row[2] or "",
+                "description": f"Violation {row[1]}",
                 "date": row[3].isoformat() if row[3] else None,
                 "location": location,
                 "borough": borough,
-                "lat": lat,
-                "lng": lng,
+                "lat": 0,
+                "lng": 0,
                 "is_night": is_night,
                 "is_high_tier": is_high_tier,
                 "points": points,
@@ -889,78 +847,31 @@ def get_local_courts_summary():
     """
     Get summary of statewide local courts data.
     Powers the Local Courts Adapter UI panel.
+    Note: Current schema doesn't have county/court/agency columns - returning placeholder data.
     """
     try:
         conn = get_db()
         cur = conn.cursor()
         
-        # Get unique counts
-        cur.execute("SELECT COUNT(DISTINCT county) FROM violations WHERE county IS NOT NULL")
-        unique_counties = cur.fetchone()[0]
-        
-        cur.execute("SELECT COUNT(DISTINCT court) FROM violations WHERE court IS NOT NULL")
-        unique_courts = cur.fetchone()[0]
-        
-        cur.execute("SELECT COUNT(DISTINCT police_agency) FROM violations WHERE police_agency IS NOT NULL")
-        unique_agencies = cur.fetchone()[0]
-        
-        # Top counties
-        cur.execute("""
-            SELECT county, COUNT(*) as cnt 
-            FROM violations 
-            WHERE county IS NOT NULL AND county != 'Unknown'
-            GROUP BY county 
-            ORDER BY cnt DESC 
-            LIMIT 20
-        """)
-        top_counties = [{"county": r[0], "count": r[1]} for r in cur]
-        
-        # Top courts
-        cur.execute("""
-            SELECT court, COUNT(*) as cnt 
-            FROM violations 
-            WHERE court IS NOT NULL
-            GROUP BY court 
-            ORDER BY cnt DESC 
-            LIMIT 20
-        """)
-        top_courts = [{"court": r[0], "count": r[1]} for r in cur]
-        
-        # Top police agencies
-        cur.execute("""
-            SELECT police_agency, COUNT(*) as cnt 
-            FROM violations 
-            WHERE police_agency IS NOT NULL
-            GROUP BY police_agency 
-            ORDER BY cnt DESC 
-            LIMIT 20
-        """)
-        top_agencies = [{"police_agency": r[0], "count": r[1]} for r in cur]
-        
-        # All unique values for dropdowns
-        cur.execute("SELECT DISTINCT county FROM violations WHERE county IS NOT NULL AND county != 'Unknown' ORDER BY county")
-        all_counties = [r[0] for r in cur]
-        
-        cur.execute("SELECT DISTINCT court FROM violations WHERE court IS NOT NULL ORDER BY court")
-        all_courts = [r[0] for r in cur]
-        
-        cur.execute("SELECT DISTINCT police_agency FROM violations WHERE police_agency IS NOT NULL ORDER BY police_agency")
-        all_agencies = [r[0] for r in cur]
+        # Get total violations count
+        cur.execute("SELECT COUNT(*) FROM violations")
+        total_violations = cur.fetchone()[0]
         
         cur.close()
         conn.close()
         
+        # Return placeholder data since schema doesn't have county/court columns
         return jsonify({
-            "unique_counties": unique_counties,
-            "unique_courts": unique_courts,
-            "unique_police_agencies": unique_agencies,
-            "top_counties": top_counties,
-            "top_courts": top_courts,
-            "top_agencies": top_agencies,
-            "all_counties": all_counties,
-            "all_courts": all_courts,
-            "all_agencies": all_agencies,
-            "message": f"Local Courts Adapter: Supporting {unique_courts:,} courts across {unique_counties:,} counties"
+            "unique_counties": 1,
+            "unique_courts": 1,
+            "unique_police_agencies": 1,
+            "top_counties": [{"county": "NYC", "count": total_violations}],
+            "top_courts": [{"court": "NYC Dept of Finance", "count": total_violations}],
+            "top_agencies": [{"police_agency": "NYPD", "count": total_violations}],
+            "all_counties": ["NYC"],
+            "all_courts": ["NYC Dept of Finance"],
+            "all_agencies": ["NYPD"],
+            "message": f"Local Courts Adapter: {total_violations:,} violations from NYC"
         })
         
     except Exception as e:
@@ -1025,91 +936,52 @@ def upload_local_court_csv():
 def get_county_stats():
     """
     Get county-level risk statistics for County Risk Cards.
+    Note: Current schema doesn't have county column - returning NYC-based stats.
     """
     try:
         conn = get_db()
         cur = conn.cursor()
         
-        # Top counties by total violations
+        # Get overall stats since we don't have county data
         cur.execute("""
             SELECT 
-                county,
                 COUNT(*) as total_violations,
                 COUNT(*) FILTER (WHERE violation_code = '1180D') as severe_1180d,
                 COUNT(*) FILTER (WHERE violation_code IN ('1180C', '1180D')) as high_severity,
                 COUNT(*) FILTER (
-                    WHERE EXTRACT(HOUR FROM issue_date) >= 22 
-                       OR EXTRACT(HOUR FROM issue_date) < 4
-                ) as nighttime_violations,
-                ROUND(100.0 * COUNT(*) FILTER (WHERE violation_code = '1180D') / NULLIF(COUNT(*), 0), 1) as severe_percent
+                    WHERE EXTRACT(HOUR FROM date_of_violation) >= 22 
+                       OR EXTRACT(HOUR FROM date_of_violation) < 4
+                ) as nighttime_violations
             FROM violations
-            WHERE county IS NOT NULL AND county != 'Unknown'
-            GROUP BY county
-            HAVING COUNT(*) >= 100
-            ORDER BY total_violations DESC
-            LIMIT 20
         """)
         
-        top_counties = []
-        for r in cur:
-            nighttime_pct = round(100.0 * r[4] / r[1], 1) if r[1] > 0 else 0
-            top_counties.append({
-                "county": r[0],
-                "total_violations": r[1],
-                "severe_1180d": r[2],
-                "high_severity": r[3],
-                "nighttime_violations": r[4],
-                "nighttime_percent": nighttime_pct,
-                "severe_percent": float(r[5]) if r[5] else 0
-            })
+        row = cur.fetchone()
+        total = row[0] or 0
+        severe_1180d = row[1] or 0
+        high_severity = row[2] or 0
+        nighttime = row[3] or 0
         
-        # Top counties by 1180D (most severe)
-        cur.execute("""
-            SELECT county, COUNT(*) as cnt
-            FROM violations
-            WHERE violation_code = '1180D' AND county IS NOT NULL AND county != 'Unknown'
-            GROUP BY county
-            ORDER BY cnt DESC
-            LIMIT 10
-        """)
-        high_severity_counties = [{"county": r[0], "count": r[1]} for r in cur]
+        nighttime_pct = round(100.0 * nighttime / total, 1) if total > 0 else 0
+        severe_pct = round(100.0 * severe_1180d / total, 1) if total > 0 else 0
         
-        # Calculate crash risk score per county
-        cur.execute("""
-            SELECT 
-                county,
-                COUNT(*) as total,
-                SUM(CASE 
-                    WHEN violation_code = '1180D' THEN 8
-                    WHEN violation_code = '1180C' THEN 5
-                    WHEN violation_code = '1180B' THEN 3
-                    WHEN violation_code IN ('1180E', '1180F') THEN 6
-                    ELSE 2
-                END) as total_points,
-                COUNT(*) FILTER (
-                    WHERE EXTRACT(HOUR FROM issue_date) >= 22 
-                       OR EXTRACT(HOUR FROM issue_date) < 4
-                ) as night_count
-            FROM violations
-            WHERE county IS NOT NULL AND county != 'Unknown'
-            GROUP BY county
-            HAVING COUNT(*) >= 100
-        """)
-        
-        county_risk = []
-        for r in cur:
-            county, total, points, night = r
-            severity_factor = min(points / (total * 5), 1.0)
-            night_factor = night / total if total > 0 else 0
-            crash_risk = round((severity_factor * 0.7 + night_factor * 0.3) * 100, 1)
-            county_risk.append({
-                "county": county,
-                "crash_risk_score": crash_risk,
+        top_counties = [{
+            "county": "NYC",
                 "total_violations": total,
-                "avg_points": round(points / total, 1) if total > 0 else 0
-            })
+            "severe_1180d": severe_1180d,
+            "high_severity": high_severity,
+            "nighttime_violations": nighttime,
+            "nighttime_percent": nighttime_pct,
+            "severe_percent": severe_pct
+        }]
         
-        county_risk.sort(key=lambda x: x["crash_risk_score"], reverse=True)
+        high_severity_counties = [{"county": "NYC", "count": severe_1180d}]
+        
+        county_risk = [{
+            "county": "NYC",
+            "crash_risk_score": severe_pct,
+            "total_violations": total,
+            "avg_points": 4.0
+        }]
         
         cur.close()
         conn.close()
@@ -1117,7 +989,7 @@ def get_county_stats():
         return jsonify({
             "top_counties": top_counties,
             "high_severity_counties": high_severity_counties,
-            "county_crash_risk": county_risk[:10],
+            "county_crash_risk": county_risk,
             "top_risk_county": county_risk[0] if county_risk else None,
             "most_1180d_county": high_severity_counties[0] if high_severity_counties else None
         })
@@ -1134,82 +1006,14 @@ def get_county_stats():
 def get_cross_jurisdiction_stats():
     """
     Get cross-jurisdiction offender statistics.
-    Identifies drivers who offend across multiple counties/courts/agencies.
+    Note: Current schema doesn't have county column - returning placeholder data.
     """
     try:
-        conn = get_db()
-        cur = conn.cursor()
-        
-        # Find cross-county offenders
-        cur.execute("""
-            SELECT 
-                plate_id,
-                registration_state,
-                COUNT(DISTINCT county) as county_count,
-                COUNT(DISTINCT court) as court_count,
-                COUNT(DISTINCT police_agency) as agency_count,
-                COUNT(*) as total_violations,
-                SUM(CASE 
-                    WHEN violation_code = '1180D' THEN 8
-                    WHEN violation_code = '1180C' THEN 5
-                    WHEN violation_code = '1180B' THEN 3
-                    WHEN violation_code IN ('1180E', '1180F') THEN 6
-                    ELSE 2
-                END) as total_points
-            FROM violations
-            WHERE county IS NOT NULL
-            GROUP BY plate_id, registration_state
-            HAVING COUNT(DISTINCT county) >= 2
-            ORDER BY COUNT(DISTINCT county) DESC, total_points DESC
-            LIMIT 100
-        """)
-        
-        cross_county_offenders = []
-        for r in cur:
-            cross_county_offenders.append({
-                "plate_id": r[0],
-                "state": r[1],
-                "county_count": r[2],
-                "court_count": r[3],
-                "agency_count": r[4],
-                "total_violations": r[5],
-                "total_points": r[6],
-                "cross_jurisdiction_risk": r[2] * 5 + r[4] * 3 + r[3] * 2
-            })
-        
-        # Summary stats
-        cur.execute("""
-            SELECT COUNT(DISTINCT plate_id)
-            FROM (
-                SELECT plate_id
-                FROM violations
-                WHERE county IS NOT NULL
-                GROUP BY plate_id
-                HAVING COUNT(DISTINCT county) >= 2
-            ) sub
-        """)
-        total_cross_county = cur.fetchone()[0]
-        
-        cur.execute("""
-            SELECT COUNT(DISTINCT plate_id)
-            FROM (
-                SELECT plate_id
-                FROM violations
-                WHERE county IS NOT NULL
-                GROUP BY plate_id
-                HAVING COUNT(DISTINCT county) >= 3
-            ) sub
-        """)
-        multi_county = cur.fetchone()[0]
-        
-        cur.close()
-        conn.close()
-        
         return jsonify({
-            "total_cross_county_offenders": total_cross_county,
-            "multi_county_offenders": multi_county,
-            "top_cross_jurisdiction": cross_county_offenders[:20],
-            "message": f"{total_cross_county:,} drivers offend across multiple counties"
+            "total_cross_county_offenders": 0,
+            "multi_county_offenders": 0,
+            "top_cross_jurisdiction": [],
+            "message": "Cross-jurisdiction tracking requires county data"
         })
         
     except Exception as e:
@@ -1227,6 +1031,7 @@ def get_impact_metrics():
     Shows estimated lives saved and crash exposure reduction.
     """
     try:
+        ensure_view_exists(ISA_POLICY)
         conn = get_db()
         cur = conn.cursor()
         
@@ -1242,18 +1047,8 @@ def get_impact_metrics():
         """)
         pending_notice = cur.fetchone()[0]
         
-        # Cross-jurisdiction offenders
-        cur.execute("""
-            SELECT COUNT(DISTINCT plate_id)
-            FROM (
-                SELECT plate_id
-                FROM violations
-                WHERE county IS NOT NULL
-                GROUP BY plate_id
-                HAVING COUNT(DISTINCT county) >= 2
-            ) sub
-        """)
-        cross_jurisdiction = cur.fetchone()[0]
+        # Cross-jurisdiction offenders (placeholder since no county column)
+        cross_jurisdiction = 0
         
         # ISA compliant drivers
         cur.execute("SELECT COUNT(DISTINCT plate_id) FROM dmv_alerts WHERE status = 'COMPLIANT'")

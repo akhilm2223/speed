@@ -1921,6 +1921,65 @@ html, body, #root {
   margin-top: 2px;
 }
 
+/* Driver Info Section */
+.driver-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.license-number {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.license-number .label {
+  color: #4A4A4A;
+  font-weight: 500;
+}
+
+.license-number .value {
+  color: #0A1A3D;
+  font-weight: 600;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+/* Violations and Points Section */
+.violations-points {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.violations-count,
+.points-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.violations-count .label,
+.points-count .label {
+  color: #4A4A4A;
+  font-weight: 500;
+  min-width: 70px;
+}
+
+.violations-count .value {
+  color: #B0181A;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.points-count .value {
+  color: #C98F00;
+  font-weight: 700;
+  font-size: 15px;
+}
+
 .court-nyc {
   font-size: 12px;
   color: #1565C0;
@@ -1999,10 +2058,6 @@ html, body, #root {
   margin-left: auto;
 }
 
-
-/* ============================================
-   ENHANCED DASHBOARD - HACKATHON READY
-   ============================================ */
 
 /* RISK FACTORS TAGS */
 .risk-factors {

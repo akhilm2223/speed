@@ -281,7 +281,7 @@ function MapView() {
   const loadData = async () => {
     try {
       const [heatmapRes, camerasRes] = await Promise.all([
-        fetch(`${API_BASE}/api/heatmap?limit=300000`),
+        fetch(`${API_BASE}/api/heatmap?limit=1000000`),
         fetch(`${API_BASE}/api/cameras`)
       ]);
 

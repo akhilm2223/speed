@@ -9,8 +9,7 @@ Usage:
 import os
 import random
 import string
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta, date
 from pathlib import Path
 
 import psycopg
@@ -29,14 +28,8 @@ FETCH_MULTIPLIER = 1.5       # Fetch extra to account for invalid records
 BATCH_SIZE = 50_000          # API batch size
 DB_BATCH_SIZE = 5000         # Database insert batch size
 
-API_URLS = [
-    ("https://data.cityofnewyork.us/resource/57p3-pdcj.json", "Moving Violation Summons", True),
-    ("https://data.cityofnewyork.us/resource/bme5-7ty4.json", "Moving Violation B Summons Historic", False),
-]
-
-# Pool of plates for generating repeat offenders (small chance of reuse)
-REPEAT_OFFENDER_PLATES = []
-REPEAT_OFFENDER_CHANCE = 0.05  # 5% chance to reuse an existing plate
+API_URL = "https://data.cityofnewyork.us/resource/57p3-pdcj.json"
+API_SOURCE_NAME = "Moving Violation Summons"
 
 
 DB_CONFIG = {
@@ -54,57 +47,44 @@ SCHEMA_PATH = PROJECT_ROOT / "sql" / "schema.sql"
 
 
 # =============================================================================
-# PLATE GENERATION (for APIs without plate data)
+# DRIVER DATA GENERATION
 # =============================================================================
 
-def generate_random_plate():
-    """Generate a random NY-style license plate (ABC1234 format)."""
-    letters = ''.join(random.choices(string.ascii_uppercase, k=3))
-    numbers = ''.join(random.choices(string.digits, k=4))
-    return f"{letters}{numbers}"
+def generate_driver_license_number():
+    """Generate a random NY driver license number (format: 9 digits)."""
+    return ''.join(random.choices(string.digits, k=9))
 
 
-def get_or_generate_plate():
-    """Get a plate - either reuse an existing one (repeat offender) or generate new."""
-    global REPEAT_OFFENDER_PLATES
-    
-    # Small chance to reuse an existing plate (repeat offender)
-    if REPEAT_OFFENDER_PLATES and random.random() < REPEAT_OFFENDER_CHANCE:
-        return random.choice(REPEAT_OFFENDER_PLATES)
-    
-    # Generate new plate
-    new_plate = generate_random_plate()
-    
-    # Add to pool for potential future reuse
-    REPEAT_OFFENDER_PLATES.append(new_plate)
-    
-    # Keep pool manageable (last 500 plates)
-    if len(REPEAT_OFFENDER_PLATES) > 500:
-        REPEAT_OFFENDER_PLATES = REPEAT_OFFENDER_PLATES[-500:]
-    
-    return new_plate
+def generate_driver_name():
+    """Generate a random driver name."""
+    first_names = ["JOHN", "JANE", "MICHAEL", "SARAH", "DAVID", "EMILY", "ROBERT", "JESSICA",
+                   "WILLIAM", "ASHLEY", "RICHARD", "AMANDA", "JOSEPH", "MELISSA", "THOMAS", "NICOLE",
+                   "CHRISTOPHER", "MICHELLE", "CHARLES", "KIMBERLY", "DANIEL", "AMY", "MATTHEW", "ANGELA"]
+    last_names = ["SMITH", "JOHNSON", "WILLIAMS", "BROWN", "JONES", "GARCIA", "MILLER", "DAVIS",
+                  "RODRIGUEZ", "MARTINEZ", "HERNANDEZ", "LOPEZ", "WILSON", "ANDERSON", "THOMAS", "TAYLOR"]
+    return f"{random.choice(first_names)} {random.choice(last_names)}"
 
 
-def get_random_state():
-    """Get a random state - mostly NY, occasionally others."""
-    # 85% NY, 15% other nearby states
-    if random.random() < 0.85:
-        return "NY"
-    else:
-        return random.choice(["NJ", "CT", "PA", "MA", "FL", "CA", "TX"])
+def generate_date_of_birth():
+    """Generate a random date of birth (age 18-75)."""
+    age = random.randint(18, 75)
+    birth_year = datetime.now().year - age
+    month = random.randint(1, 12)
+    day = random.randint(1, 28)
+    return date(birth_year, month, day)
 
 
 # =============================================================================
 # FETCH DATA FROM API
 # =============================================================================
 
-def fetch_violations_from_api(api_url, source_name, has_plate_fields, max_records):
-    """Fetch speeding violations from a single NYC Open Data API endpoint."""
+def fetch_violations_from_api(max_records):
+    """Fetch speeding violations from NYC Open Data API endpoint."""
     all_data = []
     last_date = None
     batch = 1
     
-    print(f"\nFetching from {source_name} (max {max_records:,})...")
+    print(f"\nFetching from {API_SOURCE_NAME} (max {max_records:,})...")
     
     while len(all_data) < max_records:
         # Speeding codes start with 1180
@@ -112,14 +92,10 @@ def fetch_violations_from_api(api_url, source_name, has_plate_fields, max_record
         if last_date:
             where += f" AND violation_date < '{last_date}'"
         
-        # Select fields based on what's available
-        if has_plate_fields:
+        # Select fields (API has plate fields)
             select_fields = ("evnt_key, reg_plate_num, reg_state_cd, violation_date, "
                            "violation_time, violation_code, city_nm, rpt_owning_cmd, "
                            "latitude, longitude")
-        else:
-            select_fields = ("evnt_key, violation_date, violation_time, violation_code, "
-                           "city_nm, rpt_owning_cmd, latitude, longitude")
         
         # Only fetch what we need
         remaining = max_records - len(all_data)
@@ -134,7 +110,7 @@ def fetch_violations_from_api(api_url, source_name, has_plate_fields, max_record
         
         print(f"  Batch {batch}...", end=" ", flush=True)
         
-        response = requests.get(api_url, params=params, timeout=120)
+        response = requests.get(API_URL, params=params, timeout=120)
         response.raise_for_status()
         rows = response.json()
         
@@ -142,13 +118,9 @@ def fetch_violations_from_api(api_url, source_name, has_plate_fields, max_record
             print("Done!")
             break
         
-        # Generate plate/state for records that don't have them
-        # Also tag each row with its source
+        # Tag each row with its source
         for row in rows:
-            row["_source"] = source_name
-            if not has_plate_fields:
-                row["reg_plate_num"] = get_or_generate_plate()
-                row["reg_state_cd"] = get_random_state()
+            row["_source"] = API_SOURCE_NAME
         
         all_data.extend(rows)
         print(f"got {len(rows):,} (total: {len(all_data):,})")
@@ -164,60 +136,20 @@ def fetch_violations_from_api(api_url, source_name, has_plate_fields, max_record
 
 
 def fetch_all_violations():
-    """Fetch speeding violations from all NYC Open Data API endpoints (parallel)."""
+    """Fetch speeding violations from NYC Open Data API endpoint."""
     # Fetch extra to account for ~30% invalid records (missing coordinates)
     fetch_target = int(MAX_VALID_RECORDS * FETCH_MULTIPLIER)
     print(f"\nFetching speeding violations from NYC Open Data (target {MAX_VALID_RECORDS:,} valid)...\n")
     
-    all_data = []
+    data = fetch_violations_from_api(fetch_target)
+    print(f"  Total from {API_SOURCE_NAME}: {len(data):,} violations\n")
     
-    # Fetch from all sources in parallel
-    with ThreadPoolExecutor(max_workers=len(API_URLS)) as executor:
-        futures = {}
-        for api_url, source_name, has_plate_fields in API_URLS:
-            future = executor.submit(
-                fetch_violations_from_api, 
-                api_url, source_name, has_plate_fields, fetch_target
-            )
-            futures[future] = source_name
-        
-        for future in as_completed(futures):
-            source_name = futures[future]
-            try:
-                data = future.result()
-                all_data.extend(data)
-                print(f"  Total from {source_name}: {len(data):,} violations\n")
-            except Exception as e:
-                print(f"  Error from {source_name}: {e}")
-    
-    return all_data
+    return data
 
 
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
-
-def get_violation_description(violation_code):
-    """Map violation code to human-readable description."""
-    code = str(violation_code or "").strip().upper()
-    
-    # NYC Speeding Violation Codes
-    descriptions = {
-        "1180A": "Speeding 1-10 mph over limit",
-        "1180B": "Speeding 11-20 mph over limit",
-        "1180C": "Speeding 21-30 mph over limit",
-        "1180D": "Speeding 31+ mph over limit (Excessive Speed)",
-        "1180E": "Speeding in school zone",
-        "1180F": "Speeding in work zone",
-    }
-    
-    # Return specific description or generic one
-    if code in descriptions:
-        return descriptions[code]
-    elif code.startswith("1180"):
-        return "Speeding violation"
-    else:
-        return "Traffic violation"
 
 def is_valid_location(row):
     """Check if row has valid coordinates."""
@@ -244,18 +176,6 @@ def parse_datetime(date_str, time_str):
         return None
 
 
-def format_location(row):
-    """Format location as readable string."""
-    parts = []
-    if row.get("city_nm"):
-        parts.append(row["city_nm"])
-    if row.get("latitude") and row.get("longitude"):
-        parts.append(f"({row['latitude']}, {row['longitude']})")
-    if row.get("rpt_owning_cmd"):
-        parts.append(f"Precinct: {row['rpt_owning_cmd']}")
-    return ", ".join(parts) if parts else None
-
-
 # =============================================================================
 # SAVE TO DATABASE
 # =============================================================================
@@ -279,6 +199,10 @@ def setup_database():
         with conn.cursor() as cur:
             cur.execute("DROP TABLE IF EXISTS violations CASCADE")
             cur.execute("DROP TABLE IF EXISTS vehicles CASCADE")
+            cur.execute("DROP TABLE IF EXISTS dmv_alerts CASCADE")
+            cur.execute("DROP TABLE IF EXISTS ai_violations CASCADE")
+            cur.execute("DROP TABLE IF EXISTS ai_detections CASCADE")  # Cleanup old table
+            cur.execute("DROP TABLE IF EXISTS cameras CASCADE")
             print("Tables dropped.")
     
     # Apply schema
@@ -309,16 +233,43 @@ def prepare_record(row):
     state = state[:10]
     plate = plate[:16]
     
-    issue_date = parse_datetime(row.get("violation_date"), row.get("violation_time"))
+    date_of_violation = parse_datetime(row.get("violation_date"), row.get("violation_time"))
     violation_code = row.get("violation_code")
+    
+    # Generate driver information
+    driver_license_number = generate_driver_license_number()
+    driver_full_name = generate_driver_name()
+    date_of_birth = generate_date_of_birth()
+    
+    # Generate date of conviction (30-90 days after violation)
+    if date_of_violation:
+        conviction_days = random.randint(30, 90)
+        date_of_conviction = date_of_violation + timedelta(days=conviction_days)
+    else:
+        date_of_conviction = None
+    
+    # Generate disposition
+    disposition_options = ["GUILTY", "NOT GUILTY","DISMISSED"]
+    disposition = random.choice(disposition_options)
+    
+    # Get coordinates
+    lat = float(row.get("latitude", 0))
+    lon = float(row.get("longitude", 0))
     
     vehicle = (plate, state)
     violation = (
-        plate, state, "police_stop",
+        driver_license_number,
+        driver_full_name,
+        date_of_birth,
+        state,  # license_state
+        plate,  # plate_id
+        state,  # plate_state
         violation_code,
-        get_violation_description(violation_code),
-        issue_date,
-        format_location(row),
+        date_of_violation,
+        date_of_conviction,
+        disposition,
+        lat,
+        lon,
     )
     
     return vehicle, violation
@@ -350,6 +301,9 @@ def save_to_database(violations):
         vehicle, violation = result
         vehicles.add(vehicle)
         violation_records.append(violation)
+        
+    # Rebuild vehicles set from violations (plate_id is at index 4, plate_state is at index 5)
+    vehicles = set((v[4], v[5]) for v in violation_records)
     
     # Print per-source stats
     print("\n  Per-source breakdown:")
@@ -363,8 +317,8 @@ def save_to_database(violations):
     total_invalid = sum(s["invalid"] for s in source_stats.values())
     if len(violation_records) > MAX_VALID_RECORDS:
         violation_records = violation_records[:MAX_VALID_RECORDS]
-        # Rebuild vehicles set from limited violations
-        vehicles = set((v[0], v[1]) for v in violation_records)
+        # Rebuild vehicles set from limited violations (plate_id is at index 4, plate_state is at index 5)
+        vehicles = set((v[4], v[5]) for v in violation_records)
     
     print(f"\n  Total valid: {len(violation_records):,}, Total invalid: {total_invalid:,}")
     
@@ -389,9 +343,10 @@ def save_to_database(violations):
         batch = violation_records[i:i + DB_BATCH_SIZE]
         cur.executemany(
             """INSERT INTO violations (
-                plate_id, registration_state, source_type,
-                violation_code, violation_description, issue_date, violation_location
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                driver_license_number, driver_full_name, date_of_birth, license_state,
+                plate_id, plate_state, violation_code, date_of_violation,
+                date_of_conviction, disposition, latitude, longitude
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             batch
         )
         inserted += len(batch)
@@ -399,10 +354,44 @@ def save_to_database(violations):
             print(f"    Progress: {inserted:,}/{len(violation_records):,}")
         conn.commit()
     
+    # Populate driver_license_summary table
+    print("  Updating driver_license_summary...")
+    cur.execute("""
+        INSERT INTO driver_license_summary (driver_license_number, license_state, total_speeding_tickets, points_on_license)
+        SELECT 
+            driver_license_number,
+            license_state,
+            COUNT(*),
+            SUM(CASE 
+                WHEN disposition = 'GUILTY' THEN
+                    CASE 
+                        WHEN violation_code = '1180A' THEN 3
+                        WHEN violation_code = '1180B' THEN 4
+                        WHEN violation_code = '1180C' THEN 6
+                        WHEN violation_code = '1180D' THEN 8
+                        WHEN violation_code IN ('1180E', '1180F') THEN 7
+                        ELSE 0
+                    END
+                ELSE 0
+            END)
+        FROM violations
+        WHERE violation_code LIKE '1180%'
+        GROUP BY driver_license_number, license_state
+        ON CONFLICT (driver_license_number, license_state) DO UPDATE SET
+            total_speeding_tickets = EXCLUDED.total_speeding_tickets,
+            points_on_license = EXCLUDED.points_on_license,
+            updated_at = NOW()
+    """)
+    conn.commit()
+    
+    cur.execute("SELECT COUNT(*) FROM driver_license_summary")
+    summary_count = cur.fetchone()[0]
+    
     cur.close()
     conn.close()
     
     print(f"\nDatabase: Inserted {inserted:,} violations")
+    print(f"Database: Updated {summary_count:,} driver license summaries")
 
 
 # =============================================================================
@@ -421,7 +410,7 @@ if __name__ == "__main__":
     
     print("\nDropping existing data and fetching fresh from API...")
     
-    # 1. Fetch data from API (parallel, limited)
+    # 1. Fetch data from API
     data = fetch_all_violations()
     
     if not data:

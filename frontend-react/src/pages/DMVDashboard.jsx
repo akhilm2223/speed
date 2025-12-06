@@ -364,7 +364,8 @@ function DMVDashboard() {
                         }
                       }} />
                     </th>
-                    <th>Driver</th>
+                    <th>License / Plate</th>
+                    <th>Violations / Points</th>
                     <th>Crash Risk</th>
                     <th>Risk Factors</th>
                     <th>Last Seen</th>
@@ -375,7 +376,7 @@ function DMVDashboard() {
                 </thead>
                 <tbody>
                   {filteredQueue.length === 0 && (
-                    <tr><td colSpan="8" className="empty-queue">
+                    <tr><td colSpan="9" className="empty-queue">
                       <div className="empty-state">
                         <span className="empty-icon">📋</span>
                         <p className="empty-title">No drivers match this filter</p>
@@ -397,10 +398,30 @@ function DMVDashboard() {
                           )}
                         </td>
                         <td>
-                          <button className="plate-link" onClick={() => navigate(`/dmv/drivers/${driver.plate_id}`)}>
-                            {driver.plate_id}
-                          </button>
-                          <div className="driver-meta-small">{driver.state}</div>
+                          <div className="driver-info">
+                            {driver.driver_license_number && (
+                              <div className="license-number">
+                                <span className="label">License:</span>
+                                <span className="value">{driver.driver_license_number}</span>
+                              </div>
+                            )}
+                            <button className="plate-link" onClick={() => navigate(`/dmv/drivers/${driver.plate_id}`)}>
+                              Plate: {driver.plate_id}
+                            </button>
+                            <div className="driver-meta-small">{driver.state}</div>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="violations-points">
+                            <div className="violations-count">
+                              <span className="label">Violations:</span>
+                              <span className="value">{driver.violation_count}</span>
+                            </div>
+                            <div className="points-count">
+                              <span className="label">Points:</span>
+                              <span className="value">{driver.total_points || driver.risk_points}</span>
+                            </div>
+                          </div>
                         </td>
                         <td>
                           <div className="crash-cell">

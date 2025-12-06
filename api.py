@@ -94,17 +94,16 @@ def get_stats():
 def get_heatmap():
     """Get heatmap points from violations with coordinates and severity."""
     try:
-        limit = request.args.get('limit', 300000, type=int)
+        limit = request.args.get('limit', 1000000, type=int)
         conn = get_db()
         cur = conn.cursor()
 
-        # Support both lat/lon columns and violation_location string
+        # Use columns that actually exist in schema.sql
         cur.execute("""
-            SELECT latitude, longitude, violation_location, violation_code, violation_description, 
-                   issue_date, plate_id, registration_state, police_agency, court
+            SELECT latitude, longitude, violation_code, 
+                   date_of_violation, plate_id, plate_state
             FROM violations
-            WHERE (latitude IS NOT NULL AND longitude IS NOT NULL) 
-               OR violation_location IS NOT NULL 
+            WHERE latitude IS NOT NULL AND longitude IS NOT NULL
             LIMIT %s
         """, (limit,))
 
@@ -132,40 +131,22 @@ def get_heatmap():
 
         points = []
         for row in cur:
-            lat_col, lon_col, location, violation_code, violation_description, issue_date, plate_id, registration_state, police_agency, court = row
-            
-            lat, lon = None, None
-            
-            # Try direct lat/lon columns first
-            if lat_col is not None and lon_col is not None:
-                try:
-                    lat, lon = float(lat_col), float(lon_col)
-                except (ValueError, TypeError):
-                    lat, lon = None, None
-            
-            # Fall back to parsing violation_location string
-            if (lat is None or lon is None) and location:
-                match = re.search(r'\(\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\s*\)', location)
-                if match:
-                    try:
-                        lat, lon = float(match.group(1)), float(match.group(2))
-                    except ValueError:
-                        continue
+            lat, lon, violation_code, date_of_violation, plate_id, plate_state = row
             
             if lat is not None and lon is not None and lat != 0 and lon != 0:
                 severity = get_severity_from_code(violation_code)
                 points.append({
-                    'lat': lat,
-                    'lon': lon,
+                    'lat': float(lat),
+                    'lon': float(lon),
                     'severity': severity,
                     'code': violation_code,
-                    'description': violation_description,
-                    'date': issue_date.isoformat() if issue_date else None,
+                    'description': f"Violation {violation_code}", # Placeholder as description col missing
+                    'date': date_of_violation.isoformat() if date_of_violation else None,
                     'plate': plate_id,
-                    'state': registration_state,
-                    'location': location or f"({lat}, {lon})",
-                    'agency': police_agency,
-                    'court': court
+                    'state': plate_state,
+                    'location': f"({lat}, {lon})",
+                    'agency': "NYC DOF", # Placeholder
+                    'court': "NYC Traffic Court" # Placeholder
                 })
 
         cur.close()
