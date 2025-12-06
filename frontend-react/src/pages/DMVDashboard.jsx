@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ActivityLog from '../components/ActivityLog';
 import '../styles/dmv.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5001';
@@ -16,6 +17,7 @@ function DMVDashboard() {
   const [impactMetrics, setImpactMetrics] = useState(null);
   const [showLocalCourtsPanel, setShowLocalCourtsPanel] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [activeTab, setActiveTab] = useState('dashboard');
   const navigate = useNavigate();
 
   // Enable page scrolling (override body overflow:hidden)
@@ -174,7 +176,6 @@ function DMVDashboard() {
           return (points >= 11 || tickets >= 16) || d.enforcement_status === 'NOTICE_SENT';
         });
         break;
-      case 'follow_up_sent': filtered = filtered.filter(d => d.enforcement_status === 'FOLLOW_UP_DUE'); break;
       case 'nighttime': filtered = filtered.filter(d => d.is_night_heavy); break;
       case 'isa_required': filtered = filtered.filter(d => d.status === 'ISA_REQUIRED' && d.enforcement_status === 'NEW'); break;
       case 'monitoring': 
@@ -214,147 +215,28 @@ function DMVDashboard() {
           </div>
         </div>
         <div className="header-right">
+          <div className="header-tabs">
+            <button 
+              className={`header-tab ${activeTab === 'dashboard' ? 'active' : ''}`}
+              onClick={() => setActiveTab('dashboard')}
+            >
+              Dashboard
+            </button>
+            <button 
+              className={`header-tab ${activeTab === 'courts' ? 'active' : ''}`}
+              onClick={() => setActiveTab('courts')}
+            >
+              Court Adapter
+            </button>
+          </div>
           <button className="nav-link" onClick={() => navigate('/map')}>Camera Network</button>
         </div>
       </header>
 
-      {/* POLICY BAR */}
-      <div className="policy-banner">
-        <div className="policy-badge">
-          <span className="policy-version">Policy {policy?.version || '0.1-draft'}</span>
-          <span className="policy-rule">ISA Required: ≥{policy?.isa_points_threshold || 11} pts OR ≥{policy?.isa_ticket_threshold || 16} tickets</span>
-          <span className="policy-rule">Monitoring: ≥{policy?.monitoring_min_points || 6} pts, {'<'} {policy?.isa_points_threshold || 11} pts, {'<'} {policy?.isa_ticket_threshold || 16} tickets</span>
-          <span className="policy-rule">Super Speeder: ≥3 violations</span>
-        </div>
-        {dashboard?.data_source && (
-          <div className="data-source-tag">{dashboard.data_source.name}</div>
-        )}
-      </div>
-
+      {activeTab === 'dashboard' ? (
       <div className="dmv-content">
-        <div className="dmv-main">
-          {/* GOVERNOR-READY IMPACT STRIP */}
-          {impactMetrics && (
-            <div className="impact-strip">
-              <div className="impact-item">
-                <span className="impact-value">{impactMetrics.high_risk_pending_notice?.toLocaleString()}</span>
-                <span className="impact-label">High-Risk Pending Notice</span>
-              </div>
-              <div className="impact-item">
-                <span className="impact-value">{impactMetrics.cross_jurisdiction_offenders?.toLocaleString()}</span>
-                <span className="impact-label">Cross-Jurisdiction Offenders</span>
-              </div>
-              <div className="impact-item highlight">
-                <span className="impact-value">{impactMetrics.potential_lives_saved?.toLocaleString()}</span>
-                <span className="impact-label">Est. Lives Saveable (ISA)</span>
-              </div>
-            </div>
-          )}
-
-          {/* KPI CARDS */}
-          <div className="kpi-strip">
-            <div className="kpi-card kpi-critical">
-              <div className="kpi-value">{dashboard?.kpis?.isa_required || 0}</div>
-              <div className="kpi-label">ISA Required</div>
-            </div>
-            <div className="kpi-card" onClick={() => setActiveFilter('all')}>
-              <div className="kpi-value">{dashboard?.kpis?.monitoring || 0}</div>
-              <div className="kpi-label">Monitoring</div>
-            </div>
-            <div className="kpi-card" onClick={() => setActiveFilter('nighttime')}>
-              <div className="kpi-value">{dashboard?.kpis?.super_speeders || 0}</div>
-              <div className="kpi-label">Super Speeders</div>
-            </div>
-            <div className="kpi-card">
-              <div className="kpi-value">{dashboard?.kpis?.cross_jurisdiction_offenders || dashboard?.kpis?.cross_borough_violators || 0}</div>
-              <div className="kpi-label">Cross-Jurisdiction</div>
-            </div>
-          </div>
-
-          {/* COUNTY RISK CARDS */}
-          {countyStats && (
-            <div className="county-risk-strip">
-              <div className="county-card top-risk">
-                <div className="county-info">
-                  <div className="county-label">Top Risk County</div>
-                  <div className="county-name">{countyStats.top_risk_county?.county || 'N/A'}</div>
-                  <div className="county-stat">{countyStats.top_risk_county?.crash_risk_score}% crash risk</div>
-                </div>
-              </div>
-              <div className="county-card most-severe">
-                <div className="county-info">
-                  <div className="county-label">Most 1180D Violations</div>
-                  <div className="county-name">{countyStats.most_1180d_county?.county || 'N/A'}</div>
-                  <div className="county-stat">{countyStats.most_1180d_county?.count?.toLocaleString()} severe</div>
-                </div>
-              </div>
-              <div className="county-card top-five">
-                <div className="county-info">
-                  <div className="county-label">Top 5 Counties by Risk</div>
-                  <div className="county-list">
-                    {countyStats.county_crash_risk?.slice(0, 5).map((c, i) => (
-                      <span key={i} className="county-tag">{c.county}</span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* LOCAL COURTS ADAPTER PANEL */}
-          <div className="local-courts-panel">
-            <div className="panel-header" onClick={() => setShowLocalCourtsPanel(!showLocalCourtsPanel)}>
-              <span className="panel-title">Local Courts Adapter</span>
-              {localCourts && (
-                <span className="panel-stats">
-                  {localCourts.unique_courts?.toLocaleString()} courts • {localCourts.unique_counties?.toLocaleString()} counties
-                </span>
-              )}
-              <span className="panel-toggle">{showLocalCourtsPanel ? '−' : '+'}</span>
-            </div>
-            {showLocalCourtsPanel && localCourts && (
-              <div className="panel-content">
-                <div className="courts-summary">
-                  <div className="summary-item">
-                    <span className="summary-value">{localCourts.unique_counties?.toLocaleString()}</span>
-                    <span className="summary-label">Counties Loaded</span>
-                  </div>
-                  <div className="summary-item">
-                    <span className="summary-value">{localCourts.unique_courts?.toLocaleString()}</span>
-                    <span className="summary-label">Courts Detected</span>
-                  </div>
-                  <div className="summary-item">
-                    <span className="summary-value">{localCourts.unique_police_agencies?.toLocaleString()}</span>
-                    <span className="summary-label">Police Agencies</span>
-                  </div>
-                </div>
-                <div className="courts-lists">
-                  <div className="courts-list-section">
-                    <h4>Most Active Counties</h4>
-                    {localCourts.top_counties?.slice(0, 5).map((c, i) => (
-                      <div key={i} className="list-item">
-                        <span className="item-name">{c.county}</span>
-                        <span className="item-count">{c.count?.toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="courts-list-section">
-                    <h4>Top Ticket Issuers</h4>
-                    {localCourts.top_courts?.slice(0, 5).map((c, i) => (
-                      <div key={i} className="list-item">
-                        <span className="item-name">{c.court}</span>
-                        <span className="item-count">{c.count?.toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <button className="upload-btn" onClick={() => navigate('/dmv/courts-upload')}>
-                  Upload Court CSV
-                </button>
-              </div>
-            )}
-          </div>
-
+        <div className="dmv-layout-with-sidebar">
+          <div className="dmv-main">
           {/* FILTER BAR */}
           <div className="filter-bar">
             <span className="filter-label">Filters:</span>
@@ -362,7 +244,6 @@ function DMVDashboard() {
               { key: 'high_risk', label: 'High Risk' },
               { key: 'monitoring', label: 'Monitoring' },
               { key: 'notice_sent', label: 'Notice Sent' },
-              { key: 'follow_up_sent', label: 'Follow-Up Sent' },
               { key: 'nighttime', label: 'Nighttime' },
               { key: 'recent', label: 'By Date' },
               { key: 'all', label: 'All' },
@@ -493,23 +374,74 @@ function DMVDashboard() {
             </div>
           </div>
         </div>
-
-        {/* ACTIVITY FEED */}
-        <aside className="alert-feed">
-          <h3 className="feed-title">Activity Log</h3>
-          <div className="feed-list">
-            {alerts.slice(0, 20).map((alert, i) => (
-              <div key={i} className="feed-item">
-                <div className="feed-time">{formatTime(alert.timestamp)}</div>
-                <div className="feed-content">
-                  <div className="feed-message">{alert.message}</div>
+          {/* ACTIVITY LOG SIDEBAR */}
+          <div className="dmv-sidebar-right">
+            <ActivityLog onViolationClick={(violation) => {
+              if (violation.driver_license_number) {
+                navigate(`/dmv/license/${violation.driver_license_number}`);
+              }
+            }} />
+          </div>
+        </div>
+      </div>
+      ) : (
+        /* COURT ADAPTER TAB */
+        <div className="court-adapter-content">
+          <div className="court-adapter-main">
+            {/* Stats Strip */}
+            {localCourts && (
+              <div className="courts-stats-strip">
+                <div className="court-stat-card">
+                  <div className="stat-value">{localCourts.unique_counties?.toLocaleString()}</div>
+                  <div className="stat-label">Counties</div>
+                </div>
+                <div className="court-stat-card">
+                  <div className="stat-value">{localCourts.unique_courts?.toLocaleString()}</div>
+                  <div className="stat-label">Courts</div>
+                </div>
+                <div className="court-stat-card">
+                  <div className="stat-value">{localCourts.unique_police_agencies?.toLocaleString()}</div>
+                  <div className="stat-label">Police Agencies</div>
                 </div>
               </div>
-            ))}
-            {alerts.length === 0 && <p className="feed-empty">No activity yet</p>}
+            )}
+
+            {/* Courts Lists */}
+            <div className="courts-grid">
+              <div className="courts-card">
+                <h3>Most Active Counties</h3>
+                <div className="courts-list">
+                  {localCourts?.top_counties?.slice(0, 10).map((c, i) => (
+                    <div key={i} className="court-list-item">
+                      <span className="court-name">{c.county}</span>
+                      <span className="court-count">{c.count?.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="courts-card">
+                <h3>Top Ticket Issuers</h3>
+                <div className="courts-list">
+                  {localCourts?.top_courts?.slice(0, 10).map((c, i) => (
+                    <div key={i} className="court-list-item">
+                      <span className="court-name">{c.court}</span>
+                      <span className="court-count">{c.count?.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Upload Button */}
+            <div className="upload-section">
+              <button className="upload-btn-large" onClick={() => navigate('/dmv/courts-upload')}>
+                📤 Upload Court CSV
+              </button>
+              <p className="upload-hint">Upload violation records from local courts</p>
+            </div>
           </div>
-        </aside>
-      </div>
+        </div>
+      )}
 
       {/* Scroll to Top Button */}
       {showScrollTop && (

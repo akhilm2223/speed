@@ -38,7 +38,7 @@ function DriversSidebar({ refreshTrigger }) {
   const getStatusColor = (status) => {
     switch (status) {
       case 'ISA_REQUIRED': return '#ff0000';
-      case 'MONITOR': return '#ff6b35';
+      case 'MONITOR': return '#888888';
       default: return '#4ade80';
     }
   };

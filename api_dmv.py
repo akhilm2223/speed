@@ -119,19 +119,20 @@ def compute_driver_risk(conn, plate_id: str, registration_state: str = "NY", pol
     
     query = f"""
         SELECT 
-            COUNT(*) AS total_tickets,
-            COALESCE(SUM({points_case_sql}), 0) AS total_points,
-            COUNT(*) FILTER (WHERE v.violation_code IN ({severe_codes_sql})) AS severe_count,
+            COUNT(*) FILTER (WHERE v.disposition = 'GUILTY') AS total_tickets,
+            COALESCE(SUM(CASE WHEN v.disposition = 'GUILTY' THEN {points_case_sql} ELSE 0 END), 0) AS total_points,
+            COUNT(*) FILTER (WHERE v.disposition = 'GUILTY' AND v.violation_code IN ({severe_codes_sql})) AS severe_count,
             MAX(v.date_of_violation) AS latest_violation_ts,
             MIN(v.date_of_violation) AS first_violation_ts,
             'NYC' AS primary_borough,
             1 AS borough_count,
             COUNT(*) FILTER (
-                WHERE EXTRACT(HOUR FROM v.date_of_violation) >= 22 
-                   OR EXTRACT(HOUR FROM v.date_of_violation) < 4
+                WHERE v.disposition = 'GUILTY'
+                  AND (EXTRACT(HOUR FROM v.date_of_violation) >= 22 
+                   OR EXTRACT(HOUR FROM v.date_of_violation) < 4)
             ) AS night_violations,
-            COUNT(*) FILTER (WHERE v.violation_code = '1180D') AS high_tier_count,
-            COUNT(*) FILTER (WHERE v.violation_code = '1180A') AS low_tier_count,
+            COUNT(*) FILTER (WHERE v.disposition = 'GUILTY' AND v.violation_code = '1180D') AS high_tier_count,
+            COUNT(*) FILTER (WHERE v.disposition = 'GUILTY' AND v.violation_code = '1180A') AS low_tier_count,
             'NYC Dept of Finance' AS primary_court
         FROM violations v
         WHERE v.plate_id = %s 
@@ -235,15 +236,16 @@ def ensure_view_exists(policy: dict = ISA_POLICY):
             v.plate_id,
             v.plate_state as registration_state,
             COUNT(*) AS violation_count,
-            SUM({points_case_sql}) AS risk_points,
+            SUM(CASE WHEN v.disposition = 'GUILTY' THEN {points_case_sql} ELSE 0 END) AS risk_points,
             MAX(date_of_violation) AS last_violation,
             MIN(date_of_violation) AS first_violation,
-            COUNT(*) FILTER (WHERE violation_code IN ({severe_codes_sql})) AS severe_count,
-            COUNT(*) FILTER (WHERE violation_code = '1180D') AS high_tier_count,
-            COUNT(*) FILTER (WHERE violation_code = '1180A') AS low_tier_count,
+            COUNT(*) FILTER (WHERE v.disposition = 'GUILTY' AND violation_code IN ({severe_codes_sql})) AS severe_count,
+            COUNT(*) FILTER (WHERE v.disposition = 'GUILTY' AND violation_code = '1180D') AS high_tier_count,
+            COUNT(*) FILTER (WHERE v.disposition = 'GUILTY' AND violation_code = '1180A') AS low_tier_count,
             COUNT(*) FILTER (
-                WHERE EXTRACT(HOUR FROM date_of_violation) >= 22 
-                   OR EXTRACT(HOUR FROM date_of_violation) < 4
+                WHERE v.disposition = 'GUILTY'
+                  AND (EXTRACT(HOUR FROM date_of_violation) >= 22 
+                   OR EXTRACT(HOUR FROM date_of_violation) < 4)
             ) AS night_violations,
             COALESCE(MODE() WITHIN GROUP (ORDER BY v.ticket_issuer), 'Unknown') AS primary_borough,
             COUNT(DISTINCT v.ticket_issuer) AS borough_count,
@@ -329,13 +331,22 @@ def get_dashboard():
         cross_jurisdiction_count = 0
 
         # Enforcement queue: top 5000 drivers by risk
-        # Use LATERAL JOIN for efficient driver license lookup
+        # Pre-compute license violation counts for performance
         cur.execute("""
+            WITH license_counts AS (
+                SELECT 
+                    TRIM(driver_license_number) as license_num,
+                    COUNT(*) as license_violation_count
+                FROM violations
+                WHERE driver_license_number IS NOT NULL
+                GROUP BY TRIM(driver_license_number)
+            )
             SELECT 
                 rv.plate_id, rv.registration_state, rv.violation_count, rv.risk_points,
                 rv.last_violation, rv.severe_count, rv.high_tier_count, rv.low_tier_count,
                 rv.night_violations, rv.primary_borough, rv.borough_count, rv.primary_court,
                 latest_v.driver_license_number,
+                COALESCE(license_counts.license_violation_count, 0) as license_violation_count,
                 rv.primary_agency
             FROM (
                 SELECT * FROM dmv_risk_view ORDER BY risk_points DESC LIMIT 5000
@@ -345,13 +356,14 @@ def get_dashboard():
                 WHERE plate_id = rv.plate_id AND plate_state = rv.registration_state 
                 ORDER BY date_of_violation DESC LIMIT 1
             ) latest_v ON true
+            LEFT JOIN license_counts ON TRIM(latest_v.driver_license_number) = license_counts.license_num
         """)
         
         all_drivers = []
         for row in cur:
             plate_id = row[0]
             state = row[1]
-            violation_count = row[2]
+            violation_count = row[2]  # Plate violation count
             risk_points = row[3]
             last_violation = row[4]
             severe_count = row[5]
@@ -362,6 +374,11 @@ def get_dashboard():
             borough_count = row[10]
             primary_court = row[11]
             driver_license_number = row[12]
+            license_violation_count = row[13] if row[13] is not None else 0  # License-specific violation count
+            police_agency = row[14] if len(row) > 14 else "Unknown"
+            
+            # Use license violation count if license number exists, otherwise use plate count
+            display_violation_count = license_violation_count if driver_license_number else violation_count
             
             status = compute_status(risk_points, violation_count, policy)
             trigger_reason = get_trigger_reason(risk_points, violation_count, policy)
@@ -381,14 +398,12 @@ def get_dashboard():
             is_cross_borough = borough_count >= 2
             is_night_heavy = (night_violations / violation_count) >= 0.5 if violation_count > 0 else False
             
-            # Get police_agency from row if available (index 13 after adding primary_agency)
-            police_agency = row[13] if len(row) > 13 else "Unknown"
-            
             all_drivers.append({
                 "plate_id": plate_id,
                 "driver_license_number": driver_license_number,
                 "state": state,
-                "violation_count": violation_count,
+                "violation_count": display_violation_count,  # Use license-specific count when available
+                "plate_violation_count": violation_count,  # Keep original plate count for reference
                 "risk_score": risk_points,
                 "risk_points": risk_points,
                 "total_points": risk_points,  # Alias for clarity

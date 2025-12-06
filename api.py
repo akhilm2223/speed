@@ -337,9 +337,13 @@ def get_violations_by_license(license_number):
         conn = get_db()
         cur = conn.cursor()
         
+        # Normalize license number (trim whitespace, ensure string)
+        license_number = str(license_number).strip()
+        
         # Get all violations for this license
+        # Use TRIM on both sides to handle any whitespace issues in the database
         cur.execute("""
-            SELECT 
+            SELECT DISTINCT
                 v.violation_id,
                 v.driver_license_number,
                 v.driver_full_name,
@@ -362,7 +366,7 @@ def get_violations_by_license(license_number):
                 ai.camera_id
             FROM violations v
             LEFT JOIN ai_violations ai ON v.violation_id = ai.violation_id
-            WHERE v.driver_license_number = %s
+            WHERE TRIM(v.driver_license_number) = TRIM(%s)
             ORDER BY v.date_of_violation DESC
         """, (license_number,))
         
@@ -400,11 +404,11 @@ def get_violations_by_license(license_number):
                 "camera_id": row[19]
             })
         
-        # Get driver license summary
+        # Get driver license summary (using TRIM for consistency)
         cur.execute("""
             SELECT total_speeding_tickets, points_on_license
             FROM driver_license_summary
-            WHERE driver_license_number = %s
+            WHERE TRIM(driver_license_number) = TRIM(%s)
         """, (license_number,))
         
         summary_row = cur.fetchone()
@@ -421,12 +425,15 @@ def get_violations_by_license(license_number):
         if not violations:
             return jsonify({"error": "No violations found for this license"}), 404
         
+        # Use the actual count from the violations array
+        actual_count = len(violations)
+        
         return jsonify({
             "success": True,
             "driver": driver_info,
             "summary": summary,
             "violations": violations,
-            "total_violations": len(violations)
+            "total_violations": actual_count
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1053,12 +1060,14 @@ def run_cv_detection(camera_id):
 
 @app.route('/api/recent-violations')
 def get_recent_violations():
-    """Get recent violations with screenshots for map display."""
+    """Get recent violations with screenshots for map display and activity log."""
     try:
         conn = get_db()
         cur = conn.cursor()
         
-        # Get recent AI violations with screenshots
+        limit = request.args.get('limit', 50, type=int)
+        
+        # Get recent AI violations (include all camera violations, not just those with screenshots)
         cur.execute("""
             SELECT 
                 v.violation_id,
@@ -1077,11 +1086,11 @@ def get_recent_violations():
                 v.driver_license_number,
                 v.driver_full_name
             FROM violations v
-            JOIN ai_violations ai ON v.violation_id = ai.violation_id
-            WHERE ai.screenshot_path IS NOT NULL
+            LEFT JOIN ai_violations ai ON v.violation_id = ai.violation_id
+            WHERE v.source_type = 'camera' OR ai.camera_id IS NOT NULL
             ORDER BY v.date_of_violation DESC
-            LIMIT 50
-        """)
+            LIMIT %s
+        """, (limit,))
         
         violations = []
         for row in cur:
@@ -1093,8 +1102,9 @@ def get_recent_violations():
                 'longitude': float(row[4]) if row[4] else None,
                 'violation_code': row[5],
                 'date': row[6].isoformat() if row[6] else None,
+                'date_of_violation': row[6].isoformat() if row[6] else None,  # Alias for compatibility
                 'police_agency': row[7],
-                'speed_detected': float(row[8]) if row[8] else 0,
+                'speed_detected': float(row[8]) if row[8] else None,
                 'speed_limit': row[9],
                 'camera_id': row[10],
                 'screenshot_url': f'/snapshots/{Path(row[11]).name}' if row[11] else None,

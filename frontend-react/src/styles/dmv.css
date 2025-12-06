@@ -164,15 +164,24 @@
    MAIN CONTENT LAYOUT
    ============================================ */
 .dmv-content {
-  display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 24px;
   padding: 24px;
-  max-width: 1600px;
+  max-width: 1800px;
   margin: 0 auto;
 }
 
+.dmv-layout-with-sidebar {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 24px;
+}
+
 .dmv-main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.dmv-sidebar-right {
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -1123,6 +1132,15 @@
    RESPONSIVE
    ============================================ */
 @media (max-width: 1200px) {
+  .dmv-layout-with-sidebar {
+    grid-template-columns: 1fr;
+  }
+  
+  .activity-log {
+    height: auto;
+    max-height: 500px;
+  }
+  
   .dmv-content {
     grid-template-columns: 1fr;
   }
@@ -1914,4 +1932,634 @@ select:focus {
   .filter-btn {
     display: none !important;
   }
+}
+
+
+/* ============================================
+   HEADER TABS
+   ============================================ */
+.header-tabs {
+  display: flex;
+  gap: 4px;
+  margin-right: 20px;
+}
+
+.header-tab {
+  padding: 8px 20px;
+  background: transparent;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #888;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.header-tab:hover {
+  background: #1a1a1a;
+  color: #fff;
+  border-color: #555;
+}
+
+.header-tab.active {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
+}
+
+/* ============================================
+   COURT ADAPTER TAB CONTENT
+   ============================================ */
+.court-adapter-content {
+  padding: 30px;
+  min-height: calc(100vh - 80px);
+}
+
+.court-adapter-main {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.courts-stats-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.court-stat-card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 25px;
+  text-align: center;
+}
+
+.court-stat-card .stat-value {
+  font-size: 2.5em;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 5px;
+}
+
+.court-stat-card .stat-label {
+  font-size: 14px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.courts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 25px;
+  margin-bottom: 30px;
+}
+
+.courts-card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.courts-card h3 {
+  margin: 0 0 15px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.courts-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.court-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #222;
+}
+
+.court-list-item:last-child {
+  border-bottom: none;
+}
+
+.court-name {
+  color: #ccc;
+  font-size: 14px;
+}
+
+.court-count {
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.upload-section {
+  text-align: center;
+  padding: 40px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+}
+
+.upload-btn-large {
+  padding: 15px 40px;
+  background: #fff;
+  border: none;
+  border-radius: 8px;
+  color: #000;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.upload-btn-large:hover {
+  background: #e0e0e0;
+  transform: translateY(-2px);
+}
+
+.upload-hint {
+  margin-top: 15px;
+  color: #666;
+  font-size: 14px;
+}
+
+
+/* ============================================
+   LICENSE VIOLATIONS PAGE
+   ============================================ */
+.driver-profile {
+  min-height: 100vh;
+  background: #0d0d0d;
+  color: #e5e5e5;
+}
+
+.profile-content {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 24px;
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.profile-main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.driver-header-card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 24px;
+}
+
+.driver-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.driver-identity h1 {
+  font-size: 24px;
+  color: #fff;
+  margin: 0;
+}
+
+.driver-meta {
+  display: flex;
+  gap: 20px;
+  margin-top: 10px;
+  color: #888;
+  font-size: 14px;
+}
+
+.violations-section {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.violations-section .section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 20px;
+  border-bottom: 1px solid #2a2a2a;
+  background: #151515;
+}
+
+.violations-section .section-header h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #fff;
+}
+
+.violation-count {
+  color: #888;
+  font-size: 14px;
+}
+
+.violations-section .violations-list {
+  padding: 0;
+}
+
+.violation-row {
+  display: flex;
+  gap: 20px;
+  padding: 20px;
+  border-bottom: 1px solid #222;
+  align-items: flex-start;
+}
+
+.violation-row:last-child {
+  border-bottom: none;
+}
+
+.violation-row:hover {
+  background: #1f1f1f;
+}
+
+.violation-date {
+  min-width: 100px;
+  color: #888;
+  font-size: 14px;
+}
+
+.violation-type {
+  font-weight: 600;
+  color: #fff;
+}
+
+.violation-points {
+  min-width: 80px;
+  text-align: right;
+  font-weight: 700;
+  color: #fff;
+  font-size: 14px;
+}
+
+.case-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.case-history-card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.case-history-card .card-title {
+  margin: 0 0 15px 0;
+  font-size: 14px;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.history-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.history-dot {
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border-radius: 50%;
+  margin-top: 6px;
+}
+
+.history-content {
+  flex: 1;
+}
+
+.history-action {
+  color: #fff;
+  font-size: 14px;
+}
+
+.history-meta {
+  color: #666;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+@media (max-width: 900px) {
+  .profile-content {
+    grid-template-columns: 1fr;
+  }
+  
+  .dmv-layout-with-sidebar {
+    grid-template-columns: 1fr;
+  }
+  
+  .activity-log {
+    height: auto;
+    max-height: 500px;
+  }
+}
+
+/* ============================================
+   ACTIVITY LOG SIDEBAR - ENHANCED
+   ============================================ */
+.activity-log {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 180px);
+  max-height: 900px;
+  overflow: hidden;
+}
+
+.activity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #2a2a2a;
+  background: linear-gradient(180deg, #1f1f1f 0%, #1a1a1a 100%);
+}
+
+.activity-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.activity-stats {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.activity-count,
+.activity-violations {
+  background: #fff;
+  color: #0d0d0d;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 24px;
+  text-align: center;
+}
+
+.activity-violations {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.activity-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.activity-loading,
+.activity-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: #666;
+}
+
+.activity-empty .activity-hint {
+  font-size: 11px;
+  color: #444;
+  margin-top: 8px;
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Detection Session */
+.activity-session {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 12px;
+  animation: slideInRight 0.3s ease-out;
+}
+
+.activity-session-new {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+  animation: highlightNew 0.5s ease-out;
+}
+
+.activity-session-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.session-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.session-camera {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  font-family: 'SF Mono', 'Consolas', monospace;
+}
+
+.session-time {
+  font-size: 10px;
+  color: #888;
+  font-weight: 600;
+}
+
+.session-badge {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.session-cars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Car Item */
+.activity-car {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.activity-car:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: #fff;
+  transform: translateX(-2px);
+}
+
+.activity-car.severity-severe {
+  border-left: 3px solid #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.activity-car.severity-high {
+  border-left: 3px solid #ccc;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.activity-car.severity-mod {
+  border-left: 3px solid #888;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.car-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.car-plate {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  font-family: 'SF Mono', 'Consolas', monospace;
+  letter-spacing: 1.5px;
+}
+
+.car-violation-count {
+  font-size: 10px;
+  color: #888;
+  font-weight: 600;
+}
+
+.car-violations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.car-violation {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.violation-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.violation-code {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  font-family: 'SF Mono', 'Consolas', monospace;
+}
+
+.violation-speed {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.speed-limit {
+  color: #888;
+  font-weight: 400;
+}
+
+.speed-over {
+  color: #fff;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes highlightNew {
+  0% {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: #fff;
+  }
+  100% {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: #fff;
+  }
+}
+
+/* Scrollbar for activity log */
+.activity-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.activity-content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.activity-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.activity-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
 }
